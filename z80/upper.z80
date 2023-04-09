@@ -1,0 +1,26 @@
+; this will read from the input through CP/M BDOS calls
+; will convert the character to upper case
+; print it out, and exit when ? is pressed.
+
+
+	org 0100h
+
+
+
+;Subroutine to write a single char to cpm console
+;pass char in A register
+;destroys C' and E'
+write_char:             exx	; exchanges HL,BC,DE for prime registers
+                        ld c,2  ; function 2
+                        ld e,a  ; char to write
+                        call 5  ; call bios
+                        exx
+                        ret
+
+;Subroutine to write a zero-terminated string to cpm console
+;Pass address of string in DE register, $ terminated
+;destroys C
+write_string:           ld c,9  ; function 9
+                        call 5
+                        ret
+

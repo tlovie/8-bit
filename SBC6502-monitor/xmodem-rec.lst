@@ -1,0 +1,567 @@
+Sections:
+00: "seg7b00" (7B00-7CDF)
+
+
+Source: "xmodem-rec.asm"
+                        	     1: ; XMODEM/CRC Receiver for the 65C02
+                        	     2: ;
+                        	     3: ; By Daryl Rictor & Ross Archer  Aug 2002
+                        	     4: ;
+                        	     5: ; 21st century code for 20th century CPUs (tm?)
+                        	     6: ; 
+                        	     7: ; A simple file transfer program to allow upload from a console device
+                        	     8: ; to the SBC utilizing the x-modem/CRC transfer protocol.  Requires just
+                        	     9: ; under 1k of either RAM or ROM, 132 bytes of RAM for the receive buffer,
+                        	    10: ; and 8 bytes of zero page RAM for variable storage.
+                        	    11: ;
+                        	    12: ;**************************************************************************
+                        	    13: ; This implementation of XMODEM/CRC does NOT conform strictly to the 
+                        	    14: ; XMODEM protocol standard in that it (1) does not accurately time character
+                        	    15: ; reception or (2) fall back to the Checksum mode.
+                        	    16: 
+                        	    17: ; (1) For timing, it uses a crude timing loop to provide approximate
+                        	    18: ; delays.  These have been calibrated against a 1MHz CPU clock.  I have
+                        	    19: ; found that CPU clock speed of up to 5MHz also work but may not in
+                        	    20: ; every case.  Windows HyperTerminal worked quite well at both speeds!
+                        	    21: ;
+                        	    22: ; (2) Most modern terminal programs support XMODEM/CRC which can detect a
+                        	    23: ; wider range of transmission errors so the fallback to the simple checksum
+                        	    24: ; calculation was not implemented to save space.
+                        	    25: ;**************************************************************************
+                        	    26: ;
+                        	    27: ; Files uploaded via XMODEM-CRC must be
+                        	    28: ; in .o64 format -- the first two bytes are the load address in
+                        	    29: ; little-endian format:  
+                        	    30: ;  FIRST BLOCK
+                        	    31: ;     offset(0) = lo(load start address),
+                        	    32: ;     offset(1) = hi(load start address)
+                        	    33: ;     offset(2) = data byte (0)
+                        	    34: ;     offset(n) = data byte (n-2)
+                        	    35: ;
+                        	    36: ; Subsequent blocks
+                        	    37: ;     offset(n) = data byte (n)
+                        	    38: ;
+                        	    39: ; The TASS assembler and most Commodore 64-based tools generate this
+                        	    40: ; data format automatically and you can transfer their .obj/.o64 output
+                        	    41: ; file directly.  
+                        	    42: ;   
+                        	    43: ; The only time you need to do anything special is if you have 
+                        	    44: ; a raw memory image file (say you want to load a data
+                        	    45: ; table into memory). For XMODEM you'll have to 
+                        	    46: ; "insert" the start address bytes to the front of the file.
+                        	    47: ; Otherwise, XMODEM would have no idea where to start putting
+                        	    48: ; the data.
+                        	    49: 
+                        	    50: ;-------------------------- The Code ----------------------------
+                        	    51: ;
+                        	    52: ; zero page variables (adjust these to suit your needs)
+                        	    53: ;
+                        	    54: ;
+                        	    55: crc		=	$38		; CRC lo byte  (two byte variable)
+                        	    56: crch		=	$39		; CRC hi byte  
+                        	    57: 
+                        	    58: ptr		=	$3a		; data pointer (two byte variable)
+                        	    59: ptrh		=	$3b		;   "    "
+                        	    60: 
+                        	    61: blkno		=	$3c		; block number 
+                        	    62: retry		=	$3d		; retry counter 
+                        	    63: retry2		=	$3e		; 2nd counter
+                        	    64: bflag		=	$3f		; block flag 
+                        	    65: ;
+                        	    66: ;
+                        	    67: ; non-zero page variables and buffers
+                        	    68: ;
+                        	    69: ;
+                        	    70: Rbuff		=	$0300      	; temp 132 byte receive buffer 
+                        	    71: 					;(place anywhere, page aligned)
+                        	    72: ;
+                        	    73: ;
+                        	    74: ;  tables and constants
+                        	    75: ;
+                        	    76: ;
+                        	    77: ; The crclo & crchi labels are used to point to a lookup table to calculate
+                        	    78: ; the CRC for the 128 byte data blocks.  There are two implementations of these
+                        	    79: ; tables.  One is to use the tables included (defined towards the end of this
+                        	    80: ; file) and the other is to build them at run-time.  If building at run-time,
+                        	    81: ; then these two labels will need to be un-commented and declared in RAM.
+                        	    82: ;
+                        	    83: crclo		=	$7D00      	; Two 256-byte tables for quick lookup
+                        	    84: crchi		= 	$7E00      	; (should be page-aligned for speed)
+                        	    85: ;
+                        	    86: ;
+                        	    87: ;
+                        	    88: ; XMODEM Control Character Constants
+                        	    89: SOH		=	$01		; start block
+                        	    90: EOT		=	$04		; end of text marker
+                        	    91: ACK		=	$06		; good block acknowledged
+                        	    92: NAK		=	$15		; bad block acknowledged
+                        	    93: CAN		=	$18		; cancel (not standard, not supported)
+                        	    94: CR		=	$0d		; carriage return
+                        	    95: LF		=	$0a		; line feed
+                        	    96: ESC		=	$1b		; ESC to exit
+                        	    97: 
+                        	    98: ;
+                        	    99: ;^^^^^^^^^^^^^^^^^^^^^^ Start of Program ^^^^^^^^^^^^^^^^^^^^^^
+                        	   100: ;
+                        	   101: ; Xmodem/CRC upload routine
+                        	   102: ; By Daryl Rictor, July 31, 2002
+                        	   103: ;
+                        	   104: ; v0.3  tested good minus CRC
+                        	   105: ; v0.4  CRC fixed!!! init to $0000 rather than $FFFF as stated   
+                        	   106: ; v0.5  added CRC tables vs. generation at run time
+                        	   107: ; v 1.0 recode for use with SBC2
+                        	   108: ; v 1.1 added block 1 masking (block 257 would be corrupted)
+                        	   109: 
+                        	   110: 		*= 	$7B00		; Start of program (adjust to your needs)
+                        	   111: ;
+00:7B00 20A87C          	   112: XModem		jsr	MAKECRCTABLE	; make the CRC table
+00:7B03 20F97B          	   113: 		jsr	PrintMsg	; send prompt and info
+00:7B06 A901            	   114: 		lda	#$01
+00:7B08 853C            	   115: 		sta	blkno		; set block # to 1
+00:7B0A 853F            	   116: 		sta	bflag		; set flag to get address from block 1
+00:7B0C A943            	   117: StartCrc	lda	#"C"		; "C" start with CRC mode
+00:7B0E 208B7C          	   118: 		jsr	Put_Chr		; send it
+00:7B11 A9FF            	   119: 		lda	#$FF	
+00:7B13 853E            	   120: 		sta	retry2		; set loop counter for ~3 sec delay
+00:7B15 A900            	   121: 		lda	#$00
+00:7B17 8538            	   122:                	sta	crc
+00:7B19 8539            	   123: 		sta	crch		; init CRC value	
+00:7B1B 20DC7B          	   124: 		jsr	GetByte		; wait for input
+00:7B1E B011            	   125:                	bcs	GotByte		; byte received, process it
+00:7B20 90EA            	   126: 		bcc	StartCrc	; resend "C"
+                        	   127: 
+00:7B22 A9FF            	   128: StartBlk	lda	#$FF		; 
+00:7B24 853E            	   129: 		sta	retry2		; set loop counter for ~3 sec delay
+00:7B26 A900            	   130: 		lda	#$00		;
+00:7B28 8538            	   131: 		sta	crc		;
+00:7B2A 8539            	   132: 		sta	crch		; init CRC value	
+00:7B2C 20DC7B          	   133: 		jsr	GetByte		; get first byte of block
+00:7B2F 90F1            	   134: 		bcc	StartBlk	; timed out, keep waiting...
+00:7B31 C91B            	   135: GotByte		cmp	#ESC		; quitting?
+00:7B33 D001            	   136:                 bne	GotByte1	; no
+                        	   137: ;		lda	#$FE		; Error code in "A" of desired
+00:7B35 00              	   138:                 brk			; YES - do BRK or change to RTS if desired
+00:7B36 C901            	   139: GotByte1        cmp	#SOH		; start of block?
+00:7B38 F007            	   140: 		beq	BegBlk		; yes
+00:7B3A C904            	   141: 		cmp	#EOT		;
+00:7B3C D051            	   142: 		bne	BadCrc		; Not SOH or EOT, so flush buffer & send NAK	
+00:7B3E 4CD07B          	   143: 		jmp	Done		; EOT - all done!
+00:7B41 A200            	   144: BegBlk		ldx	#$00
+00:7B43 A9FF            	   145: GetBlk		lda	#$ff		; 3 sec window to receive characters
+00:7B45 853E            	   146: 		sta 	retry2		;
+00:7B47 20DC7B          	   147: GetBlk1		jsr	GetByte		; get next character
+00:7B4A 9043            	   148: 		bcc	BadCrc		; chr rcv error, flush and send NAK
+00:7B4C 9D0003          	   149: GetBlk2		sta	Rbuff,x		; good char, save it in the rcv buffer
+00:7B4F E8              	   150: 		inx			; inc buffer pointer	
+00:7B50 E084            	   151: 		cpx	#$84		; <01> <FE> <128 bytes> <CRCH> <CRCL>
+00:7B52 D0EF            	   152: 		bne	GetBlk		; get 132 characters
+00:7B54 A200            	   153: 		ldx	#$00		;
+00:7B56 BD0003          	   154: 		lda	Rbuff,x		; get block # from buffer
+00:7B59 C53C            	   155: 		cmp	blkno		; compare to expected block #	
+00:7B5B F007            	   156: 		beq	GoodBlk1	; matched!
+00:7B5D 203D7C          	   157: 		jsr	Print_Err	; Unexpected block number - abort	
+00:7B60 20EF7B          	   158: 		jsr	Flush		; mismatched - flush buffer and then do BRK
+                        	   159: ;		lda	#$FD		; put error code in "A" if desired
+00:7B63 00              	   160: 		brk			; unexpected block # - fatal error - BRK or RTS
+00:7B64 49FF            	   161: GoodBlk1	eor	#$ff		; 1's comp of block #
+00:7B66 E8              	   162: 		inx			;
+00:7B67 DD0003          	   163: 		cmp	Rbuff,x		; compare with expected 1's comp of block #
+00:7B6A F007            	   164: 		beq	GoodBlk2 	; matched!
+00:7B6C 203D7C          	   165: 		jsr	Print_Err	; Unexpected block number - abort	
+00:7B6F 20EF7B          	   166: 		jsr 	Flush		; mismatched - flush buffer and then do BRK
+                        	   167: ;		lda	#$FC		; put error code in "A" if desired
+00:7B72 00              	   168: 		brk			; bad 1's comp of block#	
+00:7B73 A002            	   169: GoodBlk2	ldy	#$02		; 
+00:7B75 B90003          	   170: CalcCrc		lda	Rbuff,y		; calculate the CRC for the 128 bytes of data	
+00:7B78 20987C          	   171: 		jsr	UpdCrc		; could inline sub here for speed
+00:7B7B C8              	   172: 		iny			;
+00:7B7C C082            	   173: 		cpy	#$82		; 128 bytes
+00:7B7E D0F5            	   174: 		bne	CalcCrc		;
+00:7B80 B90003          	   175: 		lda	Rbuff,y		; get hi CRC from buffer
+00:7B83 C539            	   176: 		cmp	crch		; compare to calculated hi CRC
+00:7B85 D008            	   177: 		bne	BadCrc		; bad crc, send NAK
+00:7B87 C8              	   178: 		iny			;
+00:7B88 B90003          	   179: 		lda	Rbuff,y		; get lo CRC from buffer
+00:7B8B C538            	   180: 		cmp	crc		; compare to calculated lo CRC
+00:7B8D F00B            	   181: 		beq	GoodCrc		; good CRC
+00:7B8F 20EF7B          	   182: BadCrc		jsr	Flush		; flush the input port
+00:7B92 A915            	   183: 		lda	#NAK		;
+00:7B94 208B7C          	   184: 		jsr	Put_Chr		; send NAK to resend block
+00:7B97 4C227B          	   185: 		jmp	StartBlk	; start over, get the block again			
+00:7B9A A202            	   186: GoodCrc		ldx	#$02		;
+00:7B9C A53C            	   187: 		lda	blkno		; get the block number
+00:7B9E C901            	   188: 		cmp	#$01		; 1st block?
+00:7BA0 D012            	   189: 		bne	CopyBlk		; no, copy all 128 bytes
+00:7BA2 A53F            	   190: 		lda	bflag		; is it really block 1, not block 257, 513 etc.
+00:7BA4 F00E            	   191: 		beq	CopyBlk		; no, copy all 128 bytes
+00:7BA6 BD0003          	   192: 		lda	Rbuff,x		; get target address from 1st 2 bytes of blk 1
+00:7BA9 853A            	   193: 		sta	ptr		; save lo address
+00:7BAB E8              	   194: 		inx			;
+00:7BAC BD0003          	   195: 		lda	Rbuff,x		; get hi address
+00:7BAF 853B            	   196: 		sta	ptr+1		; save it
+00:7BB1 E8              	   197: 		inx			; point to first byte of data
+00:7BB2 C63F            	   198: 		dec	bflag		; set the flag so we won't get another address		
+00:7BB4 A000            	   199: CopyBlk		ldy	#$00		; set offset to zero
+00:7BB6 BD0003          	   200: CopyBlk3	lda	Rbuff,x		; get data byte from buffer
+00:7BB9 913A            	   201: 		sta	(ptr),y		; save to target
+00:7BBB E63A            	   202: 		inc	ptr		; point to next address
+00:7BBD D002            	   203: 		bne	CopyBlk4	; did it step over page boundary?
+00:7BBF E63B            	   204: 		inc	ptr+1		; adjust high address for page crossing
+00:7BC1 E8              	   205: CopyBlk4	inx			; point to next data byte
+00:7BC2 E082            	   206: 		cpx	#$82		; is it the last byte
+00:7BC4 D0F0            	   207: 		bne	CopyBlk3	; no, get the next one
+00:7BC6 E63C            	   208: IncBlk		inc	blkno		; done.  Inc the block #
+00:7BC8 A906            	   209: 		lda	#ACK		; send ACK
+00:7BCA 208B7C          	   210: 		jsr	Put_Chr		;
+00:7BCD 4C227B          	   211: 		jmp	StartBlk	; get next block
+00:7BD0 A906            	   212: Done		lda	#ACK		; last block, send ACK and exit.
+00:7BD2 208B7C          	   213: 		jsr	Put_Chr		;
+00:7BD5 20EF7B          	   214: 		jsr	Flush		; get leftover characters, if any
+00:7BD8 205B7C          	   215: 		jsr	Print_Good	;
+00:7BDB 60              	   216: 		rts			;
+                        	   217: ;
+                        	   218: ;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                        	   219: ;
+                        	   220: ; subroutines
+                        	   221: ;
+                        	   222: ;					;
+00:7BDC A900            	   223: GetByte		lda	#$00		; wait for chr input and cycle timing loop
+00:7BDE 853D            	   224: 		sta	retry		; set low value of timing loop
+00:7BE0 207E7C          	   225: StartCrcLp	jsr	Get_chr		; get chr from serial port, don't wait 
+00:7BE3 B009            	   226: 		bcs	GetByte1	; got one, so exit
+00:7BE5 C63D            	   227: 		dec	retry		; no character received, so dec counter
+00:7BE7 D0F7            	   228: 		bne	StartCrcLp	;
+00:7BE9 C63E            	   229: 		dec	retry2		; dec hi byte of counter
+00:7BEB D0F3            	   230: 		bne	StartCrcLp	; look for character again
+00:7BED 18              	   231: 		clc			; if loop times out, CLC, else SEC and return
+00:7BEE 60              	   232: GetByte1	rts			; with character in "A"
+                        	   233: ;
+00:7BEF A970            	   234: Flush		lda	#$70		; flush receive buffer
+00:7BF1 853E            	   235: 		sta	retry2		; flush until empty for ~1 sec.
+00:7BF3 20DC7B          	   236: Flush1		jsr	GetByte		; read the port
+00:7BF6 B0F7            	   237: 		bcs	Flush		; if chr recvd, wait for another
+00:7BF8 60              	   238: 		rts			; else done
+                        	   239: ;
+00:7BF9 A200            	   240: PrintMsg	ldx	#$00		; PRINT starting message
+00:7BFB BD077C          	   241: PrtMsg1		lda   	Msg,x		
+00:7BFE F006            	   242: 		beq	PrtMsg2			
+00:7C00 208B7C          	   243: 		jsr	Put_Chr
+00:7C03 E8              	   244: 		inx
+00:7C04 D0F5            	   245: 		bne	PrtMsg1
+00:7C06 60              	   246: PrtMsg2		rts
+00:7C07 426567696E20584D	   247: Msg		.byte	"Begin XMODEM/CRC transfer.  Press <Esc> to abort..."
+00:7C0F 4F44454D2F435243
+00:7C17 207472616E736665
+00:7C1F 722E202050726573
+00:7C27 73203C4573633E20
+00:7C2F 746F2061626F7274
+00:7C37 2E2E2E
+00:7C3A 0D              	   248: 		.BYTE  	CR, LF
+00:7C3B 0A
+00:7C3C 00              	   249:                	.byte   0
+                        	   250: ;
+00:7C3D A200            	   251: Print_Err	ldx	#$00		; PRINT Error message
+00:7C3F BD4B7C          	   252: PrtErr1		lda   	ErrMsg,x
+00:7C42 F006            	   253: 		beq	PrtErr2
+00:7C44 208B7C          	   254: 		jsr	Put_Chr
+00:7C47 E8              	   255: 		inx
+00:7C48 D0F5            	   256: 		bne	PrtErr1
+00:7C4A 60              	   257: PrtErr2		rts
+00:7C4B 55706C6F61642045	   258: ErrMsg		.byte 	"Upload Error!"
+00:7C53 72726F7221
+00:7C58 0D              	   259: 		.BYTE  	CR, LF
+00:7C59 0A
+00:7C5A 00              	   260:                 .byte   0
+                        	   261: ;
+00:7C5B A200            	   262: Print_Good	ldx	#$00		; PRINT Good Transfer message
+00:7C5D BD697C          	   263: Prtgood1	lda   	GoodMsg,x
+00:7C60 F006            	   264: 		beq	Prtgood2
+00:7C62 208B7C          	   265: 		jsr	Put_Chr
+00:7C65 E8              	   266: 		inx
+00:7C66 D0F5            	   267: 		bne	Prtgood1
+00:7C68 60              	   268: Prtgood2	rts
+00:7C69 55706C6F61642053	   269: GoodMsg		.byte 	"Upload Successful!"
+00:7C71 7563636573736675
+00:7C79 6C21
+00:7C7B 0D              	   270: 		.BYTE  	CR, LF
+00:7C7C 0A
+00:7C7D 00              	   271:                 .byte   0
+                        	   272: ;
+                        	   273: ;
+                        	   274: ;======================================================================
+                        	   275: ;  I/O Device Specific Routines
+                        	   276: ;
+                        	   277: ;  Two routines are used to communicate with the I/O device.
+                        	   278: ;
+                        	   279: ; "Get_Chr" routine will scan the input port for a character.  It will
+                        	   280: ; return without waiting with the Carry flag CLEAR if no character is
+                        	   281: ; present or return with the Carry flag SET and the character in the "A"
+                        	   282: ; register if one was present.
+                        	   283: ;
+                        	   284: ; "Put_Chr" routine will write one byte to the output port.  Its alright
+                        	   285: ; if this routine waits for the port to be ready.  its assumed that the 
+                        	   286: ; character was send upon return from this routine.
+                        	   287: ;
+                        	   288: ; Here is an example of the routines used for a standard 6551 ACIA.
+                        	   289: ; You would call the ACIA_Init prior to running the xmodem transfer
+                        	   290: ; routine.
+                        	   291: ;
+                        	   292: ACIActl = $e000
+                        	   293: ACIAdat = $e001
+                        	   294: 
+                        	   295: Get_Chr:
+                        	   296: ACIA1_Scan:     ; check if a character is waiting and get it
+00:7C7E 18              	   297:                 clc             ; clear carry flag
+00:7C7F AD00E0          	   298:                 lda ACIActl
+00:7C82 2901            	   299:                 and #$01        ; check if Receive register is full
+00:7C84 F004            	   300:                 beq ACIA_noscan ; no character is waiting so return
+00:7C86 AD01E0          	   301:                 lda ACIAdat     ; read the character
+00:7C89 38              	   302:                 sec             ; set carry flag if we read a character
+00:7C8A 60              	   303: ACIA_noscan:    rts
+                        	   304: 
+                        	   305: Put_Chr:
+                        	   306: ACIA1_Output:   ; send character to output port
+00:7C8B 48              	   307:                 pha
+00:7C8C AD00E0          	   308: ACIA_Out1:      lda ACIActl
+00:7C8F 2902            	   309:                 and #$02        ; check if Transmit is empty
+00:7C91 F0F9            	   310:                 beq ACIA_Out1   ; wait until transmit is empty
+00:7C93 68              	   311:                 pla
+00:7C94 8D01E0          	   312:                 sta ACIAdat     ; put character into tx buffer
+00:7C97 60              	   313:                 rts
+                        	   314: ;=========================================================================
+                        	   315: ;
+                        	   316: ;
+                        	   317: ;  CRC subroutines 
+                        	   318: ;
+                        	   319: ;
+00:7C98 4539            	   320: UpdCrc		eor 	crc+1 		; Quick CRC computation with lookup tables
+00:7C9A AA              	   321:        		tax		 	; updates the two bytes at crc & crc+1
+00:7C9B A538            	   322:        		lda 	crc		; with the byte send in the "A" register
+00:7C9D 5D007E          	   323:        		eor 	CRCHI,X
+00:7CA0 8539            	   324:        		sta 	crc+1
+00:7CA2 BD007D          	   325:       	 	lda 	CRCLO,X
+00:7CA5 8538            	   326:        		sta 	crc
+00:7CA7 60              	   327:        		rts
+                        	   328: ;
+                        	   329: ; Alternate solution is to build the two lookup tables at run-time.  This might
+                        	   330: ; be desirable if the program is running from ram to reduce binary upload time.
+                        	   331: ; The following code generates the data for the lookup tables.  You would need to
+                        	   332: ; un-comment the variable declarations for crclo & crchi in the Tables and Constants
+                        	   333: ; section above and call this routine to build the tables before calling the
+                        	   334: ; "xmodem" routine.
+                        	   335: ;
+                        	   336: MAKECRCTABLE
+00:7CA8 A200            	   337: 		ldx 	#$00
+00:7CAA A900            	   338: 		LDA	#$00
+00:7CAC 9D007D          	   339: zeroloop	sta 	crclo,x
+00:7CAF 9D007E          	   340: 		sta 	crchi,x
+00:7CB2 E8              	   341: 		inx
+00:7CB3 D0F7            	   342: 		bne	zeroloop
+00:7CB5 A200            	   343: 		ldx	#$00
+00:7CB7 8A              	   344: fetch		txa
+00:7CB8 5D007E          	   345: 		eor	crchi,x
+00:7CBB 9D007E          	   346: 		sta	crchi,x
+00:7CBE A008            	   347: 		ldy	#$08
+00:7CC0 1E007D          	   348: fetch1		asl	crclo,x
+00:7CC3 3E007E          	   349: 		rol	crchi,x
+00:7CC6 9010            	   350: 		bcc	fetch2
+00:7CC8 BD007E          	   351: 		lda	crchi,x
+00:7CCB 4910            	   352: 		eor	#$10
+00:7CCD 9D007E          	   353: 		sta	crchi,x
+00:7CD0 BD007D          	   354: 		lda	crclo,x
+00:7CD3 4921            	   355: 		eor	#$21
+00:7CD5 9D007D          	   356: 		sta	crclo,x
+00:7CD8 88              	   357: fetch2		dey
+00:7CD9 D0E5            	   358: 		bne	fetch1
+00:7CDB E8              	   359: 		inx
+00:7CDC D0D9            	   360: 		bne	fetch
+00:7CDE 60              	   361: 		rts
+                        	   362: ;
+                        	   363: ; The following tables are used to calculate the CRC for the 128 bytes
+                        	   364: ; in the xmodem data blocks.  You can use these tables if you plan to 
+                        	   365: ; store this program in ROM.  If you choose to build them at run-time, 
+                        	   366: ; then just delete them and define the two labels: crclo & crchi.
+                        	   367: ;
+                        	   368: ; low byte CRC lookup table (should be page aligned)
+                        	   369: ;		*= $7D00
+                        	   370: ;crclo
+                        	   371: ; .byte $00,$21,$42,$63,$84,$A5,$C6,$E7,$08,$29,$4A,$6B,$8C,$AD,$CE,$EF
+                        	   372: ; .byte $31,$10,$73,$52,$B5,$94,$F7,$D6,$39,$18,$7B,$5A,$BD,$9C,$FF,$DE
+                        	   373: ; .byte $62,$43,$20,$01,$E6,$C7,$A4,$85,$6A,$4B,$28,$09,$EE,$CF,$AC,$8D
+                        	   374: ; .byte $53,$72,$11,$30,$D7,$F6,$95,$B4,$5B,$7A,$19,$38,$DF,$FE,$9D,$BC
+                        	   375: ; .byte $C4,$E5,$86,$A7,$40,$61,$02,$23,$CC,$ED,$8E,$AF,$48,$69,$0A,$2B
+                        	   376: ; .byte $F5,$D4,$B7,$96,$71,$50,$33,$12,$FD,$DC,$BF,$9E,$79,$58,$3B,$1A
+                        	   377: ; .byte $A6,$87,$E4,$C5,$22,$03,$60,$41,$AE,$8F,$EC,$CD,$2A,$0B,$68,$49
+                        	   378: ; .byte $97,$B6,$D5,$F4,$13,$32,$51,$70,$9F,$BE,$DD,$FC,$1B,$3A,$59,$78
+                        	   379: ; .byte $88,$A9,$CA,$EB,$0C,$2D,$4E,$6F,$80,$A1,$C2,$E3,$04,$25,$46,$67
+                        	   380: ; .byte $B9,$98,$FB,$DA,$3D,$1C,$7F,$5E,$B1,$90,$F3,$D2,$35,$14,$77,$56
+                        	   381: ; .byte $EA,$CB,$A8,$89,$6E,$4F,$2C,$0D,$E2,$C3,$A0,$81,$66,$47,$24,$05
+                        	   382: ; .byte $DB,$FA,$99,$B8,$5F,$7E,$1D,$3C,$D3,$F2,$91,$B0,$57,$76,$15,$34
+                        	   383: ; .byte $4C,$6D,$0E,$2F,$C8,$E9,$8A,$AB,$44,$65,$06,$27,$C0,$E1,$82,$A3
+                        	   384: ; .byte $7D,$5C,$3F,$1E,$F9,$D8,$BB,$9A,$75,$54,$37,$16,$F1,$D0,$B3,$92
+                        	   385: ; .byte $2E,$0F,$6C,$4D,$AA,$8B,$E8,$C9,$26,$07,$64,$45,$A2,$83,$E0,$C1
+                        	   386: ; .byte $1F,$3E,$5D,$7C,$9B,$BA,$D9,$F8,$17,$36,$55,$74,$93,$B2,$D1,$F0 
+                        	   387: 
+                        	   388: ; hi byte CRC lookup table (should be page aligned)
+                        	   389: ;		*= $7E00
+                        	   390: ;crchi
+                        	   391: ; .byte $00,$10,$20,$30,$40,$50,$60,$70,$81,$91,$A1,$B1,$C1,$D1,$E1,$F1
+                        	   392: ; .byte $12,$02,$32,$22,$52,$42,$72,$62,$93,$83,$B3,$A3,$D3,$C3,$F3,$E3
+                        	   393: ; .byte $24,$34,$04,$14,$64,$74,$44,$54,$A5,$B5,$85,$95,$E5,$F5,$C5,$D5
+                        	   394: ; .byte $36,$26,$16,$06,$76,$66,$56,$46,$B7,$A7,$97,$87,$F7,$E7,$D7,$C7
+                        	   395: ; .byte $48,$58,$68,$78,$08,$18,$28,$38,$C9,$D9,$E9,$F9,$89,$99,$A9,$B9
+                        	   396: ; .byte $5A,$4A,$7A,$6A,$1A,$0A,$3A,$2A,$DB,$CB,$FB,$EB,$9B,$8B,$BB,$AB
+                        	   397: ; .byte $6C,$7C,$4C,$5C,$2C,$3C,$0C,$1C,$ED,$FD,$CD,$DD,$AD,$BD,$8D,$9D
+                        	   398: ; .byte $7E,$6E,$5E,$4E,$3E,$2E,$1E,$0E,$FF,$EF,$DF,$CF,$BF,$AF,$9F,$8F
+                        	   399: ; .byte $91,$81,$B1,$A1,$D1,$C1,$F1,$E1,$10,$00,$30,$20,$50,$40,$70,$60
+                        	   400: ; .byte $83,$93,$A3,$B3,$C3,$D3,$E3,$F3,$02,$12,$22,$32,$42,$52,$62,$72
+                        	   401: ; .byte $B5,$A5,$95,$85,$F5,$E5,$D5,$C5,$34,$24,$14,$04,$74,$64,$54,$44
+                        	   402: ; .byte $A7,$B7,$87,$97,$E7,$F7,$C7,$D7,$26,$36,$06,$16,$66,$76,$46,$56
+                        	   403: ; .byte $D9,$C9,$F9,$E9,$99,$89,$B9,$A9,$58,$48,$78,$68,$18,$08,$38,$28
+                        	   404: ; .byte $CB,$DB,$EB,$FB,$8B,$9B,$AB,$BB,$4A,$5A,$6A,$7A,$0A,$1A,$2A,$3A
+                        	   405: ; .byte $FD,$ED,$DD,$CD,$BD,$AD,$9D,$8D,$7C,$6C,$5C,$4C,$3C,$2C,$1C,$0C
+                        	   406: ; .byte $EF,$FF,$CF,$DF,$AF,$BF,$8F,$9F,$6E,$7E,$4E,$5E,$2E,$3E,$0E,$1E 
+                        	   407: ;
+                        	   408: ;
+                        	   409: ; End of File
+                        	   410: ;
+                        	   411: 
+
+
+Symbols by name:
+ACIA1_Output                     A:7C8B
+ACIA1_Scan                       A:7C7E
+ACIA_noscan                      A:7C8A
+ACIA_Out1                        A:7C8C
+ACIActl                          E:E000
+ACIAdat                          E:E001
+ACK                              E:0006
+BadCrc                           A:7B8F
+BegBlk                           A:7B41
+bflag                            E:003F
+blkno                            E:003C
+CalcCrc                          A:7B75
+CopyBlk                          A:7BB4
+CopyBlk3                         A:7BB6
+CopyBlk4                         A:7BC1
+CR                               E:000D
+crc                              E:0038
+crch                             E:0039
+crchi                            E:7E00
+crclo                            E:7D00
+Done                             A:7BD0
+EOT                              E:0004
+ErrMsg                           A:7C4B
+ESC                              E:001B
+fetch                            A:7CB7
+fetch1                           A:7CC0
+fetch2                           A:7CD8
+Flush                            A:7BEF
+Flush1                           A:7BF3
+Get_chr                          A:7C7E
+GetBlk                           A:7B43
+GetBlk1                          A:7B47
+GetBlk2                          A:7B4C
+GetByte                          A:7BDC
+GetByte1                         A:7BEE
+GoodBlk1                         A:7B64
+GoodBlk2                         A:7B73
+GoodCrc                          A:7B9A
+GoodMsg                          A:7C69
+GotByte                          A:7B31
+GotByte1                         A:7B36
+IncBlk                           A:7BC6
+LF                               E:000A
+MAKECRCTABLE                     A:7CA8
+Msg                              A:7C07
+NAK                              E:0015
+Print_Err                        A:7C3D
+Print_Good                       A:7C5B
+PrintMsg                         A:7BF9
+PrtErr1                          A:7C3F
+PrtErr2                          A:7C4A
+Prtgood1                         A:7C5D
+Prtgood2                         A:7C68
+PrtMsg1                          A:7BFB
+PrtMsg2                          A:7C06
+ptr                              E:003A
+Put_Chr                          A:7C8B
+Rbuff                            E:0300
+retry                            E:003D
+retry2                           E:003E
+SOH                              E:0001
+StartBlk                         A:7B22
+StartCrc                         A:7B0C
+StartCrcLp                       A:7BE0
+UpdCrc                           A:7C98
+XModem                           A:7B00
+zeroloop                         A:7CAC
+
+Symbols by value:
+0001 SOH
+0004 EOT
+0006 ACK
+000A LF
+000D CR
+0015 NAK
+001B ESC
+0038 crc
+0039 crch
+003A ptr
+003C blkno
+003D retry
+003E retry2
+003F bflag
+0300 Rbuff
+7B00 XModem
+7B0C StartCrc
+7B22 StartBlk
+7B31 GotByte
+7B36 GotByte1
+7B41 BegBlk
+7B43 GetBlk
+7B47 GetBlk1
+7B4C GetBlk2
+7B64 GoodBlk1
+7B73 GoodBlk2
+7B75 CalcCrc
+7B8F BadCrc
+7B9A GoodCrc
+7BB4 CopyBlk
+7BB6 CopyBlk3
+7BC1 CopyBlk4
+7BC6 IncBlk
+7BD0 Done
+7BDC GetByte
+7BE0 StartCrcLp
+7BEE GetByte1
+7BEF Flush
+7BF3 Flush1
+7BF9 PrintMsg
+7BFB PrtMsg1
+7C06 PrtMsg2
+7C07 Msg
+7C3D Print_Err
+7C3F PrtErr1
+7C4A PrtErr2
+7C4B ErrMsg
+7C5B Print_Good
+7C5D Prtgood1
+7C68 Prtgood2
+7C69 GoodMsg
+7C7E ACIA1_Scan
+7C7E Get_chr
+7C8A ACIA_noscan
+7C8B ACIA1_Output
+7C8B Put_Chr
+7C8C ACIA_Out1
+7C98 UpdCrc
+7CA8 MAKECRCTABLE
+7CAC zeroloop
+7CB7 fetch
+7CC0 fetch1
+7CD8 fetch2
+7D00 crclo
+7E00 crchi
+E000 ACIActl
+E001 ACIAdat

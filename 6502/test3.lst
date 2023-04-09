@@ -1,0 +1,191 @@
+Sections:
+00: "seg1000" (1000-10F4)
+
+
+Source: "test3.s"
+                        	     1: prtb = $c000
+                        	     2: prta = $c001
+                        	     3: ddrb = $c002
+                        	     4: ddra = $c003
+                        	     5: E =  %01000000
+                        	     6: RS = %00100000
+                        	     7: RW = %00010000
+                        	     8: 
+                        	     9:     org $1000
+                        	    10: 
+                        	    11: reset:
+00:1000 A9FF            	    12:     lda #%11111111 ; set all pins to output
+00:1002 8D02C0          	    13:     sta ddrb
+                        	    14: 
+00:1005 20D110          	    15:     jsr lcd_wait
+                        	    16: 
+00:1008 A902            	    17:     lda #%00000010 ; set 4 bit operation
+00:100A 8D00C0          	    18:     sta prtb
+00:100D 0940            	    19:     ora #(E)
+00:100F 8D00C0          	    20:     sta prtb
+00:1012 29BF            	    21:     and #(~E)
+00:1014 8D00C0          	    22:     sta prtb
+                        	    23: 
+                        	    24: 
+00:1017 A928            	    25:     lda #%00101000 ; set 4 bit operation with 2 line display
+00:1019 20A810          	    26:     jsr lcd_inst
+                        	    27: 
+00:101C A901            	    28:     lda #%00000001 ; clear screen
+00:101E 20A810          	    29:     jsr lcd_inst 
+                        	    30: 
+00:1021 A90E            	    31:     lda #%00001110 ; turn on display and cursor
+00:1023 20A810          	    32:     jsr lcd_inst
+                        	    33: 
+00:1026 A906            	    34:     lda #%00000110 ; 
+00:1028 20A810          	    35:     jsr lcd_inst
+                        	    36: 
+00:102B A0FF            	    37:     ldy #$ff	; delay loop to see screen empty
+00:102D A2FF            	    38: k1: ldx #$ff
+00:102F EA              	    39: k2: nop
+00:1030 EA              	    40:     nop
+00:1031 EA              	    41:     nop
+00:1032 EA              	    42:     nop
+00:1033 CA              	    43:     dex
+00:1034 D0F9            	    44:     bne k2
+00:1036 88              	    45:     dey
+00:1037 D0F4            	    46:     bne k1
+                        	    47:  
+00:1039 A948            	    48:     lda #$48		; H 48
+00:103B 207B10          	    49:     jsr lcd_data
+                        	    50: 
+00:103E A965            	    51:     lda #$65		; e 65
+00:1040 207B10          	    52:     jsr lcd_data
+                        	    53: 
+00:1043 A96C            	    54:     lda #$6c ; l 6c
+00:1045 207B10          	    55:     jsr lcd_data
+                        	    56: 
+00:1048 A96C            	    57:     lda #$6c ; l 6c
+00:104A 207B10          	    58:     jsr lcd_data
+                        	    59:     
+00:104D A96F            	    60:     lda #$6f ; o 6f
+00:104F 207B10          	    61:     jsr lcd_data
+                        	    62: 
+00:1052 A92C            	    63:     lda #$2c ; , 2c
+00:1054 207B10          	    64:     jsr lcd_data
+                        	    65: 
+00:1057 A920            	    66:     lda #$20 ; " " 20
+00:1059 207B10          	    67:     jsr lcd_data
+                        	    68: 
+00:105C A957            	    69:     lda #$57 ; W 57
+00:105E 207B10          	    70:     jsr lcd_data
+                        	    71: 
+00:1061 A96F            	    72:     lda #$6f ; o 6f
+00:1063 207B10          	    73:     jsr lcd_data
+                        	    74: 
+00:1066 A972            	    75:     lda #$72 ; r 72
+00:1068 207B10          	    76:     jsr lcd_data
+                        	    77: 
+00:106B A96C            	    78:     lda #$6c ; l 6c
+00:106D 207B10          	    79:     jsr lcd_data
+                        	    80:     
+00:1070 A964            	    81:     lda #$64 ; d 64
+00:1072 207B10          	    82:     jsr lcd_data
+                        	    83:     
+00:1075 A921            	    84:     lda #$21 ; ! 21
+00:1077 207B10          	    85:     jsr lcd_data
+                        	    86: 
+                        	    87: 
+00:107A 60              	    88:     rts ; back to monitor
+                        	    89: 
+                        	    90: lcd_data:
+                        	    91:     ; data is in A register
+00:107B 48              	    92:     pha	; save copy for 2nd nibble
+00:107C 20D110          	    93:     jsr lcd_wait	; wait for lcd to be ready
+00:107F 4A              	    94:     lsr
+00:1080 4A              	    95:     lsr
+00:1081 4A              	    96:     lsr
+00:1082 4A              	    97:     lsr
+00:1083 0920            	    98:     ora #(RS)
+00:1085 8D00C0          	    99:     sta prtb
+00:1088 0940            	   100:     ora #(E)
+00:108A 8D00C0          	   101:     sta prtb
+00:108D 29BF            	   102:     and #(~E)
+00:108F 8D00C0          	   103:     sta prtb
+00:1092 20D110          	   104:     jsr lcd_wait
+00:1095 68              	   105:     pla
+00:1096 290F            	   106:     and #$0f ; clear top nibble
+00:1098 0920            	   107:     ora #(RS)
+00:109A 8D00C0          	   108:     sta prtb
+00:109D 0940            	   109:     ora #(E)
+00:109F 8D00C0          	   110:     sta prtb
+00:10A2 29BF            	   111:     and #(~E)
+00:10A4 8D00C0          	   112:     sta prtb
+00:10A7 60              	   113:     rts
+                        	   114: 
+                        	   115: lcd_inst:
+                        	   116:     ; data is in A register
+00:10A8 48              	   117:     pha	; save copy for 2nd nibble
+00:10A9 20D110          	   118:     jsr lcd_wait	; wait for lcd to be ready
+00:10AC 4A              	   119:     lsr
+00:10AD 4A              	   120:     lsr
+00:10AE 4A              	   121:     lsr
+00:10AF 4A              	   122:     lsr
+00:10B0 8D00C0          	   123:     sta prtb
+00:10B3 0940            	   124:     ora #(E)
+00:10B5 8D00C0          	   125:     sta prtb
+00:10B8 29BF            	   126:     and #(~E)
+00:10BA 8D00C0          	   127:     sta prtb
+00:10BD 20D110          	   128:     jsr lcd_wait
+00:10C0 68              	   129:     pla
+00:10C1 290F            	   130:     and #$0f ; clear top nibble
+00:10C3 8D00C0          	   131:     sta prtb
+00:10C6 0940            	   132:     ora #(E)
+00:10C8 8D00C0          	   133:     sta prtb
+00:10CB 29BF            	   134:     and #(~E)
+00:10CD 8D00C0          	   135:     sta prtb
+00:10D0 60              	   136:     rts
+                        	   137: 
+                        	   138: lcd_wait:
+00:10D1 48              	   139:     pha ; save a
+00:10D2 A9F0            	   140:     lda #%11110000 ; set db7 pin to input
+00:10D4 8D02C0          	   141:     sta ddrb
+                        	   142: lcd_wait_loop:
+00:10D7 A910            	   143:     lda #RW ; read busy flag
+00:10D9 8D00C0          	   144:     sta prtb
+00:10DC A950            	   145:     lda #(RW | E)
+00:10DE 8D00C0          	   146:     sta prtb
+00:10E1 A910            	   147:     lda #RW
+00:10E3 8D00C0          	   148:     sta prtb
+00:10E6 AD00C0          	   149:     lda prtb	
+00:10E9 2908            	   150:     and #%00001000 ; check if zero
+00:10EB D0EA            	   151:     bne lcd_wait_loop
+00:10ED A9FF            	   152:     lda #%11111111 ; return to all output
+00:10EF 8D02C0          	   153:     sta ddrb
+00:10F2 68              	   154:     pla ; restore a
+00:10F3 60              	   155:     rts
+                        	   156: 
+                        	   157: 
+
+
+Symbols by name:
+E                                E:0040
+RS                               E:0020
+RW                               E:0010
+ddrb                             E:C002
+k1                               A:102D
+k2                               A:102F
+lcd_data                         A:107B
+lcd_inst                         A:10A8
+lcd_wait                         A:10D1
+lcd_wait_loop                    A:10D7
+prtb                             E:C000
+reset                            A:1000
+
+Symbols by value:
+0010 RW
+0020 RS
+0040 E
+1000 reset
+102D k1
+102F k2
+107B lcd_data
+10A8 lcd_inst
+10D1 lcd_wait
+10D7 lcd_wait_loop
+C000 prtb
+C002 ddrb

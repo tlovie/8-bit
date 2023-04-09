@@ -1,0 +1,56 @@
+Sections:
+00: "seg2000" (2000-201A)
+
+
+Source: "test_timer.s"
+                        	     1: prtb = $c000
+                        	     2: prta = $c001
+                        	     3: ddrb = $c002
+                        	     4: ddra = $c003
+                        	     5: ier  = $c00e
+                        	     6: loc  = $c004
+                        	     7: hoc  = $c005
+                        	     8: lol  = $c006
+                        	     9: hol  = $c007
+                        	    10: acr  = $c00b
+                        	    11: E =  %01000000
+                        	    12: RS = %00100000
+                        	    13: RW = %00010000
+                        	    14: 
+                        	    15: 
+                        	    16: 
+                        	    17:     .org $2000
+                        	    18: 
+00:2000 A97F            	    19:         lda #0b01111111
+00:2002 8D0EC0          	    20:         sta ier         ; disable interrupts for all functions
+                        	    21: 
+00:2005 A9FF            	    22:         lda #0xff
+00:2007 8D02C0          	    23:         sta ddrb        ; set all pins on portb to output
+                        	    24: 
+00:200A A9C0            	    25: 	lda #0b11000000
+00:200C 8D0BC0          	    26:         sta acr         ; set timer 1 to square wave mode with int disabled
+                        	    27: 
+00:200F A906            	    28:         lda #06
+00:2011 8D04C0          	    29:         sta loc         ; set the value to 6 for the low order latch
+                        	    30: 
+00:2014 A900            	    31:         lda #0x00
+00:2016 8D05C0          	    32:         sta hoc         ; set high order latch to 0 - should start timer
+                        	    33: 
+00:2019 60              	    34: 	rts
+                        	    35: 
+                        	    36: 
+
+
+Symbols by name:
+acr                              E:C00B
+ddrb                             E:C002
+hoc                              E:C005
+ier                              E:C00E
+loc                              E:C004
+
+Symbols by value:
+C002 ddrb
+C004 loc
+C005 hoc
+C00B acr
+C00E ier

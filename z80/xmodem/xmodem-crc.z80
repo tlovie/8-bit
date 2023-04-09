@@ -1,0 +1,248 @@
+; based on 6502 version http://www.6502.org/source/io/xmodem/xmodem-receive.txt
+; re-coded by Tom Lovie 2023-03-23
+
+monitor_warm_start:	equ	000ch
+
+SOH	equ 01h		; start block
+EOT	equ 04h		; end of text marker
+ACK	equ 06h		; good block acknowledged
+NAK	equ 15h		; bad block acknowledged
+CAN	equ 18h		; cancel (not standard, not supported)
+CR	equ 0dh		; carriage return
+LF	equ 0ah		; line feed
+ESC	equ 1bh		; ESC to exit
+
+crclo:	equ 0a00h	; memory to store the low byte crc table
+crclop: equ 0ah		; page of that memory
+crchi: 	equ 0b00h	; memory to store the high byte crc table
+crchip: equ 0bh		; page of that memory
+sbuff:	equ 1000h	; storage buffer to place received data
+rbuff:	equ crc+02h	; we are using the blank space after the CRC to store the block
+rbuffp: equ (crc+02h) >> 8	; receive buffer is NOT allowed to cross page boundary
+rbuffl: equ (crc + 04h) & 00ffh	; data portion only - it actually starts two bytes 
+rbuffe: equ (crc + 84h) & 00ffh	; back for the block number and compliment
+
+	org 0800h
+
+		call XModem
+		jp monitor_warm_start
+
+XModem:		call MakeCRCTable
+		ld hl,msg
+		call write_string
+		ld hl,sbuff	
+		ld (ptr),hl	; initialize the storage pointer
+		ld a,01h
+		ld (blkno),a	; start at block number 1
+StartX:		ld a,"C"	; Start in CRC mode - no fallback
+		call put_chr	; send it
+		xor a		; zero a register	
+		call GetByte	; try to get a byte
+		jr c,GotByte
+		jr nc,StartX	; if not try again
+StartBlk: 	xor a		; zero a register
+		call GetByte	; try to get byte - delay in a register
+		jr nc,StartBlk  ; and keep trying to get a character
+GotByte:	cp ESC		; want to quit
+		ret z		
+		cp SOH		; start of block?
+		jr z,BegBlk
+		cp EOT		; end of text
+		jr nz,SendNAK
+		jr Done
+BegBlk:		ld hl,rbuff	; start hl at the receive buffer
+GetBlk:		xor a		; 3 second window to receive char in a register
+GetBlk1:	call GetByte	; get next char
+		jr nc,SendNAK	; sending NAK
+GetBlk2:	ld (hl),a	; store the character in buffer pointed to by (hl)
+		inc l		; increment the buffer
+		ld a,rbuffe+2	; <01><FE><128 bytes><CRCHI><CRCLO>
+		cp l
+		jr nz,GetBlk	; get 132 characters (0x84)
+		ld l,rbuffl-2	; start at beginning of buffer again (now filled with a block)
+		ld a,(blkno)	; actual block number
+		cp (hl)		; sent block number
+		jr nz,ErrorOut	; error out if block number is unexpected
+		xor 0ffh	; compliment the actual block number
+		inc l 		
+		cp (hl)		; compare to second byte
+		jr nz,ErrorOut	; error out if block compliment is unexpected 
+		xor a		; zero a
+		ld (crc),a	; initialize crc value
+		ld (crc+1),a
+		ld d,rbuffp	; point de at the receive buffer
+		ld e,rbuffl	; second character (start of data)
+CalcCrc:	ld a,(de)	; get the byte into a
+		call UpdCRC	; could inline this for speed
+		inc e		;
+		ld a, rbuffe
+		cp e
+		jr nz,CalcCrc	; go for 128 bytes (130 - 2)
+		ld bc,(crc)	; b=(crc+1), c=(crc)	calculated CRC
+		ld a,(de)	; high byte of CRC sent
+		cp b		; compare high byte of calculated CRC
+		jr nz,SendNAK
+		inc e		; increment receive buffer pointer
+		ld a,(de)	; low byte of CRC sent
+		cp c		; compare low byte of calculated CRC
+		jr z,GoodBLK	; copy the receive buffer, send ACK
+SendNAK:	call Flush	; flush serial buffer
+		ld a,NAK	; and send
+		call put_chr	; a NAK
+		jr StartBlk	; restart the block
+GoodBLK:	ld l,rbuffl	; start at the front of the block  d is pointing at the page of the received data
+		ld h,d		; hl is now pointing at the start of the data
+		ld de,(ptr)	; de is now pointing at the storage buffer position
+		ld c,80h	; 128 bytes
+		ld b,00h	;
+		ldir		; copy the block
+		ld (ptr),de	; store the current position of the storage buffer
+		ld a,(blkno)	; load the block number
+		inc a
+		ld (blkno),a	; store the block number back
+SendACK:	ld a,ACK	; send ACK
+		call put_chr
+		jp StartBlk	; get next block
+Done:		ld a,ACK
+		call put_chr
+		call Flush
+		ld hl,good	; load success message
+		call write_string
+		ret
+
+ErrorOut:       ld hl,err       ; print error message and exit if block number is unexpected
+                call write_string
+                call Flush      ; discard remaining buffer
+                ret             ; return after fatal error
+
+; subroutine to wait a set amount of time to get a byte
+; Byte will be in A, destroys BC (delay loop), A initially has the delay counter
+GetByte:	ld b,a			; high retry counter
+		ld c,00h		; store 0 in c (retry counter)
+GetByteLoop:
+		call get_chr
+		ret c			; return if got chr (carry set)
+		dec c
+		jr nz,GetByteLoop
+		dec b
+		jr nz,GetByteLoop	; delay loop
+		or a			; clear carry flag
+		ret
+
+; subroutine to flush the receive buffer
+; destroys A
+Flush:		ld a,80h 	; uses fixed delay for flush
+		call GetByte
+		jr c,Flush
+		ret		
+
+
+;Subroutine to update the crc in memory with one byte in A
+;Updates the CRC in memory (crc), destroys BC, A, HL
+;DE is used for the pointer to the block on the calling end of this loop
+; 6502 version
+;UpdCrc			eor 	crc+1 		; xor A with high byte of CRC
+;       		tax		 	; store result somewhere
+;       		lda 	crc		; get low byte of CRC
+;       		eor 	CRCHI,X		; xor with crchi table lookup from saved result (x)
+;       		sta 	crc+1		; store this into the high byte of the running CRC
+;	      	 	lda 	CRCLO,X		; load A with crclo table lookup from saved result (x)
+;       		sta 	crc		; store that into the low byte of the CRC
+;       		rts			
+				; a has the byte value that we want to add in to the CRC
+UpdCRC:ld bc,(crc)		; c = (crc), b = (crc+1)
+	xor b			; xor a with high byte of CRC
+	ld l,a			; store that as the low byte of hl
+	ld h,crchip		; hl is now the high table byte with offest of first xor operation
+	ld a,c			; load a with low byte of running CRC
+	ld b,(hl)		; fetch the high table byte from memory into b
+	xor b			; xor high table byte with low byte of running CRC
+	ld (crc+1),a		; store that result in the high byte of running CRC
+	ld h,crclop		; load h with low table CRC page, (hl) is now low table value
+	ld a,(hl)		; fetch that byte into accumulator
+	ld (crc),a		; store it into running CRC low byte
+	ret
+
+;Get one byte from the serial port if available.
+;Returns with byte in A reg with carry flag set, if carry flag clear means no character available
+get_chr:	or	a			;clear carry flag
+		in      a,(3)                   ;get status
+                and     002h                    ;check RxRDY bit
+                ret	z			;not ready, quit
+                in      a,(2)                   ;get char
+		scf				;set carry flag to show we got a char
+		ret
+
+;
+;Subroutine to write a zero-terminated string to serial output
+;Pass address of string in HL register
+;No error checking
+write_string:           in      a,(3)                   ;read status
+                        and     001h                    ;check TxRDY bit
+                        jp      z,write_string          ;loop if not set
+                        ld      a,(hl)                  ;get char from string
+                        and     a                       ;check if 0
+                        ret     z                       ;yes, finished
+                        out     (2),a                   ;no, write char to output
+                        inc     hl                      ;next char in string
+                        jp      write_string            ;start over
+
+;
+;Puts a single char (byte value) on serial output
+;Call with char to send in A register. Uses B register
+put_chr:	ld      b,a                     ;store char
+put_chr1:	in      a,(3)                   ;check if OK to send
+                and     001h                    ;check TxRDY bit
+                jp      z,put_chr1       ;loop if not set
+                ld      a,b                     ;get char back
+                out     (2),a                   ;send to output
+                ret                             ;returns with char in a
+
+; subroutine to make the CRC table for fast CRC calculation
+; destroys a, bc, de, hl, ix
+; so we make this table ahead of time, since we have to shift through every bit
+; and this will streamline the calculations for every block that we transfer
+MakeCRCTable:
+        xor a 	                ; zero a
+        ld hl,crclo             ; hl is pointer to crclo mem area
+        ld d,h                  ; point de at the same place as hl
+        ld e,l                  ;        
+        inc e                   ; de pointing one greater that hl
+        ld b,01h                ; 
+        ld c,0ffh               ; going for 511 bytes
+        ld (hl),a		; store the 0 in the first byte
+        ldir			; zero out all the rest
+        ld hl,crchi             ; use hl for pointer to crchi (hl,ix,iy are the only registers that... 
+        ld ix,crclo             ; use ix for pointer to crclo  ... can do in memory rotate and shifts)
+        ld d,a    	        ; a still has a zero in it          
+CRCT1:  ld a,d			; d register is main loop counter
+	ld c,(hl)               ; want to xor the value in the high table with a
+        xor c			;
+        ld (hl),a               ; and store it back to the high table 
+        ld e,08h                ; e register is inner loop counter
+CRCT2: sla (ix+0)		; shift the low byte table to the left
+        rl (hl)                 ; rotate because we are doing a 16 bit shift
+        jr nc,CRCT3		; if the carry is not set (no bit shifted out) - do nothing 
+        ld a,(hl)               ; carry is set so we need to xor with the polynomial 0x1021
+        xor 10h                 ; load the high bit, xor it with high polynomial
+        ld (hl),a               ; and store it back
+        ld a,(ix+0)             ; load the low bit,
+        xor 21h                 ; xor it with the low polynomial
+        ld (ix+0),a             ; store it back
+CRCT3:	dec e                   ;
+        jr nz,CRCT2		; continue on for all 8 bits
+        inc ix			; increment the pointers
+        inc hl
+        inc d                   ; and increment counter and loop
+        jr nz,CRCT1             ; until we get to 256 (0)
+	ret
+
+err:	dfb "Up Err!",CR,LF,0
+good:	dfb "Up Ok!",CR,LF,0
+msg:	dfb "X/CRC <Esc> to q",CR,LF,0
+
+blkno:	dfb 0		; block number of the transfer
+ptr:	dfw 0		; pointer to storage block
+crc:	dfw 0		; running crc calculation
+
+	; the receive buffer lands here

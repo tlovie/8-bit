@@ -1,0 +1,367 @@
+Sections:
+00: "seg800" (800-974)
+
+
+Source: "xmodem-crc.z80"
+                        	     1: ; based on 6502 version http://www.6502.org/source/io/xmodem/xmodem-receive.txt
+                        	     2: ; re-coded by Tom Lovie 2023-03-23
+                        	     3: 
+                        	     4: monitor_warm_start:	equ	000ch
+                        	     5: 
+                        	     6: SOH	equ 01h		; start block
+                        	     7: EOT	equ 04h		; end of text marker
+                        	     8: ACK	equ 06h		; good block acknowledged
+                        	     9: NAK	equ 15h		; bad block acknowledged
+                        	    10: CAN	equ 18h		; cancel (not standard, not supported)
+                        	    11: CR	equ 0dh		; carriage return
+                        	    12: LF	equ 0ah		; line feed
+                        	    13: ESC	equ 1bh		; ESC to exit
+                        	    14: 
+                        	    15: crclo:	equ 0a00h	; memory to store the low byte crc table
+                        	    16: crclop: equ 0ah		; page of that memory
+                        	    17: crchi: 	equ 0b00h	; memory to store the high byte crc table
+                        	    18: crchip: equ 0bh		; page of that memory
+                        	    19: sbuff:	equ 1000h	; storage buffer to place received data
+                        	    20: rbuff:	equ crc+02h	; we are using the blank space after the CRC to store the block
+                        	    21: rbuffp: equ (crc+02h) >> 8	; receive buffer is NOT allowed to cross page boundary
+                        	    22: rbuffl: equ (crc + 04h) & 00ffh	; data portion only - it actually starts two bytes 
+                        	    23: rbuffe: equ (crc + 84h) & 00ffh	; back for the block number and compliment
+                        	    24: 
+                        	    25: 	org 0800h
+                        	    26: 
+00:0800 CD0608          	    27: 		call XModem
+00:0803 C30C00          	    28: 		jp monitor_warm_start
+                        	    29: 
+00:0806 CD0F09          	    30: XModem:		call MakeCRCTable
+00:0809 215C09          	    31: 		ld hl,msg
+00:080C CDF308          	    32: 		call write_string
+00:080F 210010          	    33: 		ld hl,sbuff	
+00:0812 227009          	    34: 		ld (ptr),hl	; initialize the storage pointer
+00:0815 3E01            	    35: 		ld a,01h
+00:0817 326F09          	    36: 		ld (blkno),a	; start at block number 1
+00:081A 3E43            	    37: StartX:		ld a,"C"	; Start in CRC mode - no fallback
+00:081C CD0309          	    38: 		call put_chr	; send it
+00:081F AF              	    39: 		xor a		; zero a register	
+00:0820 CDBD08          	    40: 		call GetByte	; try to get a byte
+00:0823 3808            	    41: 		jr c,GotByte
+00:0825 30F3            	    42: 		jr nc,StartX	; if not try again
+00:0827 AF              	    43: StartBlk: 	xor a		; zero a register
+00:0828 CDBD08          	    44: 		call GetByte	; try to get byte - delay in a register
+00:082B 30FA            	    45: 		jr nc,StartBlk  ; and keep trying to get a character
+00:082D FE1B            	    46: GotByte:	cp ESC		; want to quit
+00:082F C8              	    47: 		ret z		
+00:0830 FE01            	    48: 		cp SOH		; start of block?
+00:0832 2806            	    49: 		jr z,BegBlk
+00:0834 FE04            	    50: 		cp EOT		; end of text
+00:0836 2042            	    51: 		jr nz,SendNAK
+00:0838 186A            	    52: 		jr Done
+00:083A 217409          	    53: BegBlk:		ld hl,rbuff	; start hl at the receive buffer
+00:083D AF              	    54: GetBlk:		xor a		; 3 second window to receive char in a register
+00:083E CDBD08          	    55: GetBlk1:	call GetByte	; get next char
+00:0841 3037            	    56: 		jr nc,SendNAK	; sending NAK
+00:0843 77              	    57: GetBlk2:	ld (hl),a	; store the character in buffer pointed to by (hl)
+00:0844 2C              	    58: 		inc l		; increment the buffer
+00:0845 3EF8            	    59: 		ld a,rbuffe+2	; <01><FE><128 bytes><CRCHI><CRCLO>
+00:0847 BD              	    60: 		cp l
+00:0848 20F3            	    61: 		jr nz,GetBlk	; get 132 characters (0x84)
+00:084A 2E74            	    62: 		ld l,rbuffl-2	; start at beginning of buffer again (now filled with a block)
+00:084C 3A6F09          	    63: 		ld a,(blkno)	; actual block number
+00:084F BE              	    64: 		cp (hl)		; sent block number
+00:0850 2061            	    65: 		jr nz,ErrorOut	; error out if block number is unexpected
+00:0852 EEFF            	    66: 		xor 0ffh	; compliment the actual block number
+00:0854 2C              	    67: 		inc l 		
+00:0855 BE              	    68: 		cp (hl)		; compare to second byte
+00:0856 205B            	    69: 		jr nz,ErrorOut	; error out if block compliment is unexpected 
+00:0858 AF              	    70: 		xor a		; zero a
+00:0859 327209          	    71: 		ld (crc),a	; initialize crc value
+00:085C 327309          	    72: 		ld (crc+1),a
+00:085F 1609            	    73: 		ld d,rbuffp	; point de at the receive buffer
+00:0861 1E76            	    74: 		ld e,rbuffl	; second character (start of data)
+00:0863 1A              	    75: CalcCrc:	ld a,(de)	; get the byte into a
+00:0864 CDD408          	    76: 		call UpdCRC	; could inline this for speed
+00:0867 1C              	    77: 		inc e		;
+00:0868 3EF6            	    78: 		ld a, rbuffe
+00:086A BB              	    79: 		cp e
+00:086B 20F6            	    80: 		jr nz,CalcCrc	; go for 128 bytes (130 - 2)
+00:086D ED4B7209        	    81: 		ld bc,(crc)	; b=(crc+1), c=(crc)	calculated CRC
+00:0871 1A              	    82: 		ld a,(de)	; high byte of CRC sent
+00:0872 B8              	    83: 		cp b		; compare high byte of calculated CRC
+00:0873 2005            	    84: 		jr nz,SendNAK
+00:0875 1C              	    85: 		inc e		; increment receive buffer pointer
+00:0876 1A              	    86: 		ld a,(de)	; low byte of CRC sent
+00:0877 B9              	    87: 		cp c		; compare low byte of calculated CRC
+00:0878 280A            	    88: 		jr z,GoodBLK	; copy the receive buffer, send ACK
+00:087A CDCC08          	    89: SendNAK:	call Flush	; flush serial buffer
+00:087D 3E15            	    90: 		ld a,NAK	; and send
+00:087F CD0309          	    91: 		call put_chr	; a NAK
+00:0882 18A3            	    92: 		jr StartBlk	; restart the block
+00:0884 2E76            	    93: GoodBLK:	ld l,rbuffl	; start at the front of the block  d is pointing at the page of the received data
+00:0886 62              	    94: 		ld h,d		; hl is now pointing at the start of the data
+00:0887 ED5B7009        	    95: 		ld de,(ptr)	; de is now pointing at the storage buffer position
+00:088B 0E80            	    96: 		ld c,80h	; 128 bytes
+00:088D 0600            	    97: 		ld b,00h	;
+00:088F EDB0            	    98: 		ldir		; copy the block
+00:0891 ED537009        	    99: 		ld (ptr),de	; store the current position of the storage buffer
+00:0895 3A6F09          	   100: 		ld a,(blkno)	; load the block number
+00:0898 3C              	   101: 		inc a
+00:0899 326F09          	   102: 		ld (blkno),a	; store the block number back
+00:089C 3E06            	   103: SendACK:	ld a,ACK	; send ACK
+00:089E CD0309          	   104: 		call put_chr
+00:08A1 C32708          	   105: 		jp StartBlk	; get next block
+00:08A4 3E06            	   106: Done:		ld a,ACK
+00:08A6 CD0309          	   107: 		call put_chr
+00:08A9 CDCC08          	   108: 		call Flush
+00:08AC 215309          	   109: 		ld hl,good	; load success message
+00:08AF CDF308          	   110: 		call write_string
+00:08B2 C9              	   111: 		ret
+                        	   112: 
+00:08B3 214909          	   113: ErrorOut:       ld hl,err       ; print error message and exit if block number is unexpected
+00:08B6 CDF308          	   114:                 call write_string
+00:08B9 CDCC08          	   115:                 call Flush      ; discard remaining buffer
+00:08BC C9              	   116:                 ret             ; return after fatal error
+                        	   117: 
+                        	   118: ; subroutine to wait a set amount of time to get a byte
+                        	   119: ; Byte will be in A, destroys BC (delay loop), A initially has the delay counter
+00:08BD 47              	   120: GetByte:	ld b,a			; high retry counter
+00:08BE 0E00            	   121: 		ld c,00h		; store 0 in c (retry counter)
+                        	   122: GetByteLoop:
+00:08C0 CDE908          	   123: 		call get_chr
+00:08C3 D8              	   124: 		ret c			; return if got chr (carry set)
+00:08C4 0D              	   125: 		dec c
+00:08C5 20F9            	   126: 		jr nz,GetByteLoop
+00:08C7 05              	   127: 		dec b
+00:08C8 20F6            	   128: 		jr nz,GetByteLoop	; delay loop
+00:08CA B7              	   129: 		or a			; clear carry flag
+00:08CB C9              	   130: 		ret
+                        	   131: 
+                        	   132: ; subroutine to flush the receive buffer
+                        	   133: ; destroys A
+00:08CC 3E80            	   134: Flush:		ld a,80h 	; uses fixed delay for flush
+00:08CE CDBD08          	   135: 		call GetByte
+00:08D1 38F9            	   136: 		jr c,Flush
+00:08D3 C9              	   137: 		ret		
+                        	   138: 
+                        	   139: 
+                        	   140: ;Subroutine to update the crc in memory with one byte in A
+                        	   141: ;Updates the CRC in memory (crc), destroys BC, A, HL
+                        	   142: ;DE is used for the pointer to the block on the calling end of this loop
+                        	   143: ; 6502 version
+                        	   144: ;UpdCrc			eor 	crc+1 		; xor A with high byte of CRC
+                        	   145: ;       		tax		 	; store result somewhere
+                        	   146: ;       		lda 	crc		; get low byte of CRC
+                        	   147: ;       		eor 	CRCHI,X		; xor with crchi table lookup from saved result (x)
+                        	   148: ;       		sta 	crc+1		; store this into the high byte of the running CRC
+                        	   149: ;	      	 	lda 	CRCLO,X		; load A with crclo table lookup from saved result (x)
+                        	   150: ;       		sta 	crc		; store that into the low byte of the CRC
+                        	   151: ;       		rts			
+                        	   152: 				; a has the byte value that we want to add in to the CRC
+00:08D4 ED4B7209        	   153: UpdCRC:ld bc,(crc)		; c = (crc), b = (crc+1)
+00:08D8 A8              	   154: 	xor b			; xor a with high byte of CRC
+00:08D9 6F              	   155: 	ld l,a			; store that as the low byte of hl
+00:08DA 260B            	   156: 	ld h,crchip		; hl is now the high table byte with offest of first xor operation
+00:08DC 79              	   157: 	ld a,c			; load a with low byte of running CRC
+00:08DD 46              	   158: 	ld b,(hl)		; fetch the high table byte from memory into b
+00:08DE A8              	   159: 	xor b			; xor high table byte with low byte of running CRC
+00:08DF 327309          	   160: 	ld (crc+1),a		; store that result in the high byte of running CRC
+00:08E2 260A            	   161: 	ld h,crclop		; load h with low table CRC page, (hl) is now low table value
+00:08E4 7E              	   162: 	ld a,(hl)		; fetch that byte into accumulator
+00:08E5 327209          	   163: 	ld (crc),a		; store it into running CRC low byte
+00:08E8 C9              	   164: 	ret
+                        	   165: 
+                        	   166: ;Get one byte from the serial port if available.
+                        	   167: ;Returns with byte in A reg with carry flag set, if carry flag clear means no character available
+00:08E9 B7              	   168: get_chr:	or	a			;clear carry flag
+00:08EA DB03            	   169: 		in      a,(3)                   ;get status
+00:08EC E602            	   170:                 and     002h                    ;check RxRDY bit
+00:08EE C8              	   171:                 ret	z			;not ready, quit
+00:08EF DB02            	   172:                 in      a,(2)                   ;get char
+00:08F1 37              	   173: 		scf				;set carry flag to show we got a char
+00:08F2 C9              	   174: 		ret
+                        	   175: 
+                        	   176: ;
+                        	   177: ;Subroutine to write a zero-terminated string to serial output
+                        	   178: ;Pass address of string in HL register
+                        	   179: ;No error checking
+00:08F3 DB03            	   180: write_string:           in      a,(3)                   ;read status
+00:08F5 E601            	   181:                         and     001h                    ;check TxRDY bit
+00:08F7 CAF308          	   182:                         jp      z,write_string          ;loop if not set
+00:08FA 7E              	   183:                         ld      a,(hl)                  ;get char from string
+00:08FB A7              	   184:                         and     a                       ;check if 0
+00:08FC C8              	   185:                         ret     z                       ;yes, finished
+00:08FD D302            	   186:                         out     (2),a                   ;no, write char to output
+00:08FF 23              	   187:                         inc     hl                      ;next char in string
+00:0900 C3F308          	   188:                         jp      write_string            ;start over
+                        	   189: 
+                        	   190: ;
+                        	   191: ;Puts a single char (byte value) on serial output
+                        	   192: ;Call with char to send in A register. Uses B register
+00:0903 47              	   193: put_chr:	ld      b,a                     ;store char
+00:0904 DB03            	   194: put_chr1:	in      a,(3)                   ;check if OK to send
+00:0906 E601            	   195:                 and     001h                    ;check TxRDY bit
+00:0908 CA0409          	   196:                 jp      z,put_chr1       ;loop if not set
+00:090B 78              	   197:                 ld      a,b                     ;get char back
+00:090C D302            	   198:                 out     (2),a                   ;send to output
+00:090E C9              	   199:                 ret                             ;returns with char in a
+                        	   200: 
+                        	   201: ; subroutine to make the CRC table for fast CRC calculation
+                        	   202: ; destroys a, bc, de, hl, ix
+                        	   203: ; so we make this table ahead of time, since we have to shift through every bit
+                        	   204: ; and this will streamline the calculations for every block that we transfer
+                        	   205: MakeCRCTable:
+00:090F AF              	   206:         xor a 	                ; zero a
+00:0910 21000A          	   207:         ld hl,crclo             ; hl is pointer to crclo mem area
+00:0913 54              	   208:         ld d,h                  ; point de at the same place as hl
+00:0914 5D              	   209:         ld e,l                  ;        
+00:0915 1C              	   210:         inc e                   ; de pointing one greater that hl
+00:0916 0601            	   211:         ld b,01h                ; 
+00:0918 0EFF            	   212:         ld c,0ffh               ; going for 511 bytes
+00:091A 77              	   213:         ld (hl),a		; store the 0 in the first byte
+00:091B EDB0            	   214:         ldir			; zero out all the rest
+00:091D 21000B          	   215:         ld hl,crchi             ; use hl for pointer to crchi (hl,ix,iy are the only registers that... 
+00:0920 DD21000A        	   216:         ld ix,crclo             ; use ix for pointer to crclo  ... can do in memory rotate and shifts)
+00:0924 57              	   217:         ld d,a    	        ; a still has a zero in it          
+00:0925 7A              	   218: CRCT1:  ld a,d			; d register is main loop counter
+00:0926 4E              	   219: 	ld c,(hl)               ; want to xor the value in the high table with a
+00:0927 A9              	   220:         xor c			;
+00:0928 77              	   221:         ld (hl),a               ; and store it back to the high table 
+00:0929 1E08            	   222:         ld e,08h                ; e register is inner loop counter
+00:092B DDCB0026        	   223: CRCT2: sla (ix+0)		; shift the low byte table to the left
+00:092F CB16            	   224:         rl (hl)                 ; rotate because we are doing a 16 bit shift
+00:0931 300C            	   225:         jr nc,CRCT3		; if the carry is not set (no bit shifted out) - do nothing 
+00:0933 7E              	   226:         ld a,(hl)               ; carry is set so we need to xor with the polynomial 0x1021
+00:0934 EE10            	   227:         xor 10h                 ; load the high bit, xor it with high polynomial
+00:0936 77              	   228:         ld (hl),a               ; and store it back
+00:0937 DD7E00          	   229:         ld a,(ix+0)             ; load the low bit,
+00:093A EE21            	   230:         xor 21h                 ; xor it with the low polynomial
+00:093C DD7700          	   231:         ld (ix+0),a             ; store it back
+00:093F 1D              	   232: CRCT3:	dec e                   ;
+00:0940 20E9            	   233:         jr nz,CRCT2		; continue on for all 8 bits
+00:0942 DD23            	   234:         inc ix			; increment the pointers
+00:0944 23              	   235:         inc hl
+00:0945 14              	   236:         inc d                   ; and increment counter and loop
+00:0946 20DD            	   237:         jr nz,CRCT1             ; until we get to 256 (0)
+00:0948 C9              	   238: 	ret
+                        	   239: 
+00:0949 55702045727221  	   240: err:	dfb "Up Err!",CR,LF,0
+00:0950 0D
+00:0951 0A
+00:0952 00
+00:0953 5570204F6B21    	   241: good:	dfb "Up Ok!",CR,LF,0
+00:0959 0D
+00:095A 0A
+00:095B 00
+00:095C 582F435243203C45	   242: msg:	dfb "X/CRC <Esc> to q",CR,LF,0
+00:0964 73633E20746F2071
+00:096C 0D
+00:096D 0A
+00:096E 00
+                        	   243: 
+00:096F 00              	   244: blkno:	dfb 0		; block number of the transfer
+00:0970 0000            	   245: ptr:	dfw 0		; pointer to storage block
+00:0972 0000            	   246: crc:	dfw 0		; running crc calculation
+                        	   247: 
+                        	   248: 	; the receive buffer lands here
+                        	   249: 
+
+
+Symbols by name:
+ACK                              E:0006
+BegBlk                           A:083A
+CR                               E:000D
+CRCT1                            A:0925
+CRCT2                            A:092B
+CRCT3                            A:093F
+CalcCrc                          A:0863
+Done                             A:08A4
+EOT                              E:0004
+ESC                              E:001B
+ErrorOut                         A:08B3
+Flush                            A:08CC
+GetBlk                           A:083D
+GetBlk1                          A:083E
+GetBlk2                          A:0843
+GetByte                          A:08BD
+GetByteLoop                      A:08C0
+GoodBLK                          A:0884
+GotByte                          A:082D
+LF                               E:000A
+MakeCRCTable                     A:090F
+NAK                              E:0015
+SOH                              E:0001
+SendACK                          A:089C
+SendNAK                          A:087A
+StartBlk                         A:0827
+StartX                           A:081A
+UpdCRC                           A:08D4
+XModem                           A:0806
+blkno                            A:096F
+crc                              A:0972
+crchi                            E:0B00
+crchip                           E:000B
+crclo                            E:0A00
+crclop                           E:000A
+err                              A:0949
+get_chr                          A:08E9
+good                             A:0953
+monitor_warm_start               E:000C
+msg                              A:095C
+ptr                              A:0970
+put_chr                          A:0903
+put_chr1                         A:0904
+rbuff                            E:0974
+rbuffe                           E:00F6
+rbuffl                           E:0076
+rbuffp                           E:0009
+sbuff                            E:1000
+write_string                     A:08F3
+
+Symbols by value:
+0001 SOH
+0004 EOT
+0006 ACK
+0009 rbuffp
+000A LF
+000A crclop
+000B crchip
+000C monitor_warm_start
+000D CR
+0015 NAK
+001B ESC
+0076 rbuffl
+00F6 rbuffe
+0806 XModem
+081A StartX
+0827 StartBlk
+082D GotByte
+083A BegBlk
+083D GetBlk
+083E GetBlk1
+0843 GetBlk2
+0863 CalcCrc
+087A SendNAK
+0884 GoodBLK
+089C SendACK
+08A4 Done
+08B3 ErrorOut
+08BD GetByte
+08C0 GetByteLoop
+08CC Flush
+08D4 UpdCRC
+08E9 get_chr
+08F3 write_string
+0903 put_chr
+0904 put_chr1
+090F MakeCRCTable
+0925 CRCT1
+092B CRCT2
+093F CRCT3
+0949 err
+0953 good
+095C msg
+096F blkno
+0970 ptr
+0972 crc
+0974 rbuff
+0A00 crclo
+0B00 crchi
+1000 sbuff

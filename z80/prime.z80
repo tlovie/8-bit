@@ -1,0 +1,338 @@
+;prime number extractor
+;Tom Lovie 2023-02-06
+;
+;notes:	all primes are of the form 6(n)-1 and 6(n)+1 not sure if this will be used
+;	this could make the extraction of larger primes more efficient
+;
+;	pseudo code
+; 	for (d=3; d<FFFE0001; d+=2)
+;		for (q=3; q<=sqrt(d); q+=2)	
+;			remainder = d % q 
+;			if (remainder == 0) break;
+;		if (remainder != 0) d is prime;
+			
+
+
+        org 0100h       ; set origin
+	
+	ld hl,buffer	; 2 3 5 7 is in buffer initially and will not be calculated
+	call write_string
+
+	ld iy,(bufc)	; divisor
+	ld de,(bufa+0)	; initialize d loop
+	ld bc,(bufa+2)	; bcde is the d loop counter
+	ld l,e		; hl needs to be non zero first time through
+
+main: 	ld (bufa+0),de	; store d in memory
+	ld (bufa+2),bc	;
+	ld ix,trid	; load the trial d into ix
+	call cmp32	; executes (ix) - bcde - nc means trid is larger
+	jr nc,loop_q_begin	; on carry then need to increment maxq and recompute trid
+	exx		; save registers
+	ld de,(maxq)	; load current maxq
+	inc de		; increment current maxq
+	ld (maxq),de	; store back to maxq
+	ld b,d		; copy to de to bc
+	ld c,e		
+	call mul16x16	; multiply the numbers to get the new trid
+	ld (trid),hl	; low bits in hl
+	ld (trid+2),de	; high bits in de
+	exx		; get other registers back
+loop_q_begin:
+	ld iy,03	; initialize divisor q loop - unroll the 3 divisor loop
+        call div32x16   ; test for divisibility, hl is remainder
+        ld a,l          ; test if hl is zero
+        or h            ; zero flag would be set here if composite
+        ld de,(bufa+0)  ; but need to restore the d value
+        ld bc,(bufa+2)  ;     before we jump out
+        jr z,composite  ; if hl was zero then composite
+        inc iy          ; increment iy
+        inc iy          ;     twice
+loop_q: ld a,(maxq)	; check if iy is greater than maxq
+	sub iyl		; subtract the low byte
+	ld a,(maxq+1)	; load high byte
+	sbc a,iyh	; carry should be set here if q is larger than maxq
+	jr c,prime	; exit the q loop
+	call div32x16	; test for divisibility, hl is remainder
+	ld a,l		; test if hl is zero
+	or h		; zero flag would be set here if composite
+        ld de,(bufa+0)  ; but need to restore the d value 
+        ld bc,(bufa+2)  ;     before we jump out
+	jr z,composite	; if hl was zero then composite
+	inc iy		; increment iy
+	inc iy		;     x 2
+	ld a,(maxq)	; same as above but unrolled once 
+	sub iyl		; to take advantage of 6n +- 1
+	ld a,(maxq+1)	; 
+	sbc a,iyh	; 
+	jr c,prime	;
+	call div32x16	; 
+	ld a,l		; 
+	or h		; 
+        ld de,(bufa+0)  ;  
+        ld bc,(bufa+2)  ; 
+	jr z,composite	; 
+	inc iy		; increment iy
+	inc iy		;     x 4
+	inc iy	
+	inc iy
+	jp loop_q	; loop q
+prime:	call buf32	; puts BCDE into the string buffer
+	ld hl,buffer	; and writes it out
+	call write_string
+composite:
+	call inc32_2	; increment the d loop
+	ld ix,maxd
+	call cmp32	; check if done d loop
+	jp nc,main
+end:
+	call write_newline 
+	ret
+
+;Subroutine to place the 32bit integer BCDE into the string buffer
+;input: 32bit int BCDE (MSB=b, LSB=e), uses global print buffer at: buffer 
+;output: none
+;destroys a,hl
+buf32:		push bc		;save these registers
+		push de
+	
+		ld hl,buffer
+		ld a,16
+		call clear_buf
+buf32_loop:	ld a,e
+		or d
+		or c
+		or b
+		jr z,buf32_end
+		call div32_10
+		ld a,l
+		add a,"0"
+		ld ix,buffer
+		call push_char_buf
+		jp buf32_loop
+	
+buf32_end:	ld a," "
+		call push_char_buf
+		pop de		;restore these registers
+		pop bc
+		ret
+
+
+;Subroutine to increment 32bit integer BCDE by 2
+;input: 32bit int BCDE (MSB=b, LSB=e)
+;output: none
+;destroys a
+inc32_2:	ld a,2
+		add a,e
+		ld e,a
+		ret nc
+		ld a,0
+		adc a,d
+		ld d,a
+		ret nc
+		ld a,0
+		adc a,c
+		ld c,a
+		ret nc
+		ld a,0
+		adc a,b
+		ld b,a
+		ret
+
+;Subroutine to compare 32bit integer BCDE to 32bit buffer at IX
+;input: 32bit int BCDE (MSB=b, LSB=e), IX buffer (LSB=IX+0, MSB=IX+3)
+;output: carry flag will be set if BCDE is larger
+;destroys a
+cmp32:		ld a,(ix+0)
+		sub e
+		ld a,(ix+1)
+		sbc a,d
+		ld a,(ix+2)
+		sbc a,c
+		ld a,(ix+3)
+		sbc a,b
+		ret
+
+;Subroutine to integer multiply two 16bit integers
+;inputs: DE Multiplier, BC Multiplicand, HL=0
+;output: DE:HL
+;https://map.grauw.nl/sources/external/z80bits.html#3
+;https://tutorials.eeems.ca/Z80ASM/part4.htm#mul16
+mul16x16:
+		ld hl,0
+		ld a,16		; need to loop 16 times
+mul16x16_loop:
+		add hl,hl
+		rl e
+		rl d
+		jp nc,mul16x16_no
+		add hl,bc
+		jp nc,mul16x16_no
+		inc de
+mul16x16_no:
+		dec a
+		jp nz,mul16x16_loop
+
+		ret
+
+;Subroutine to integer divide 32bit integer by 10 (little endian)
+;inputs: put dividend in bcde (lsb=e, msb=b), zero in hl (optional)
+;output: quotient in bcde (msb = b, lsb=e), remainder in hl
+;destroys: a, ix
+div32_10:
+		ld ixl,32	; do the rotate loop 32 times
+		xor a		; zero a - and clears carry flag
+		ld h,a		; zero out hl
+		ld l,a
+
+div32_10_rot:
+		rl e	; rotate least significant byte
+		rl d	; rotate all the rest
+		rl c
+		rl b
+		rl l	
+		rl h
+
+			; now subract bufc from bufb
+		ld a,l		; load trial remainder into a
+		sbc a,10	; subtract the divisor lsb
+
+		jp c,div32_10_ignore	; jump if the carry is set - means we had to borrow
+		ld l,a
+div32_10_ignore:	; ignore the result if negative
+		dec ixl
+		jp nz,div32_10_rot	; do rl/sbc/check carry - 32 times
+	
+		rl e	; at end of 32 bits still need to rotate bcde
+		rl d
+		rl c
+		rl b
+
+		ld a,e 	; all these registers need to be inverted
+		cpl
+		ld e,a
+		ld a,d
+		cpl
+		ld d,a
+		ld a,c
+		cpl
+		ld c,a
+		ld a,b
+		cpl
+		ld b,a
+
+		ret		; div32_10
+
+;Subroutine to integer divide 32bit integer by 16bit (little endian)
+;inputs: put dividend in bcde (lsb=e, msb=b), zero in hl (optional), put divisor in iy
+;output: quotient in bcde (msb = b, lsb=e), remainder in hl, divisor in iy
+;destroys: a, ix
+div32x16:
+		ld ixl,32	; do the rotate loop 32 times
+		xor a		; zero a - and clears carry flag
+		ld h,a		; zero out hl
+		ld l,a
+
+div32x16_rot:
+		rl e	; rotate least significant byte
+		rl d	; rotate all the rest
+		rl c
+		rl b
+		rl l	
+		rl h
+
+		; now subract bufc from bufb
+		ld a,l		; load trial remainder into a
+		sbc a,iyl	; subtract the divisor lsb
+		ld ixh,a	; store the result back to (ixh a)
+		ld a,h		; and so on for all 2 bytes
+		sbc a,iyh
+
+		jp c,div32x16_ignore	; jump if the carry is set - means we had to borrow
+		ld h,a		; since subtraction was possible (no carry)
+		ld a,ixh	; store result back in hl
+		ld l,a
+div32x16_ignore:	; ignore the result if negative
+		dec ixl
+		jp nz,div32x16_rot	; do rl/sbc/check carry - 32 times
+	
+		rl e	; at end of 32 bits still need to rotate bcde
+		rl d
+		rl c
+		rl b
+		
+		ld a,e 	; all these registers need to be inverted
+		cpl
+		ld e,a
+		ld a,d
+		cpl
+		ld d,a
+		ld a,c
+		cpl
+		ld c,a
+		ld a,b
+		cpl
+		ld b,a
+
+		ret		; div32x16
+
+;Subroutine to push a character into the front of the character buffer
+;Inputs: IX address of character buffer, A is the character
+;Destroys IX
+push_char_buf:	push bc		; get a register to use
+push_char_loop:	ld b,a		; put char into b
+		ld a,(ix+0)	; fetch char from memory
+		ld (ix+0),b	; write char to memory
+		inc ix		; move to next mem loc
+		cp "$"		; test if we read a zero from memory
+		jp nz,push_char_loop
+		pop bc		; restore register
+		ret
+
+;Subroutine to clear character buffer
+;Inputs: HL address of character buffer, A number of bytes to clear
+clear_buf: 	ld (hl),"$"
+ 		inc hl
+		dec a
+		jp nz,clear_buf
+		ret
+		
+;Subroutine to write a single char to serial output
+;pass char in A register
+write_char: 		exx	; save hl,bc,de
+			ld c,2	; function 2
+			ld e,a	; char to write
+			call 5	; call BDOS
+			exx	; restore registers
+			ret
+
+
+;Subroutine to write a zero-terminated string to serial output
+;Pass address of string in HL register
+;No error checking
+write_string:           push de	; save de
+			push bc
+			ld c,9	; function 9
+			ex de,hl
+			call 5
+			pop bc
+			pop de
+			ret
+
+;
+;Subroutine to start a new line
+write_newline:          ld      a,00dh                  ;ASCII carriage return character
+                        call    write_char
+                        ld      a,00ah                  ;new line (line feed) character
+                        call    write_char
+                        ret
+
+buffer:	dfb "2 3 5 7 "	; 16 character buffer for printing out numbers
+	dfb "$$$$$$$$"
+bufa:	dfw 0009h,00h		; buf a, 32 bit, 4 bytes
+bufb:	dfw 0,0			; buf b, 32 bit, 4 bytes
+bufc:	dfw 10,0		; buf c, 32 bit, 4 bytes
+maxd:	dfw 0ffffh,00h		; buf d, 32 bit, 4 bytes
+maxq:	dfw 3
+trid:	dfw 9,0
+hex_char_table:	dfb	"0123456789ABCDEF"

@@ -1,0 +1,428 @@
+Sections:
+00: "seg100" (100-2CD)
+
+
+Source: "prime2.z80"
+                        	     1: ;prime number extractor v2
+                        	     2: ;Tom Lovie 2023-02-06
+                        	     3: ;
+                        	     4: ;notes:	all primes are of the form 6(n)-1 and 6(n)+1 not sure if this will be used
+                        	     5: ;	this could make the extraction of larger primes more efficient
+                        	     6: ;
+                        	     7: ;	largest 16bit prime 65521
+                        	     8: ;	pi(n) gives 6495 - meaning there is approximately 
+                        	     9: ;			6495 primes less than 65536
+                        	    10: ; 	reserve space from 0x2000 to 0x5FFF to hold 2 byte primes 
+                        	    11: ;
+                        	    12: ;	pseudo code
+                        	    13: ; 	for (d=3; d<FFFE0001; d+=2)
+                        	    14: ;		for (q=3; q<=sqrt(d); q+=2)	
+                        	    15: ;			remainder = d % q 
+                        	    16: ;			if (remainder == 0) break;
+                        	    17: ;		if (remainder != 0) d is prime;
+                        	    18: 			
+                        	    19: st_p:	equ	02000h
+                        	    20: 
+                        	    21:         org 0100h       ; set origin
+                        	    22: 
+00:0100 210300          	    23: 	ld hl,03h	; put 3 as the first prime
+00:0103 220020          	    24: 	ld (st_p),hl	; write it to memory
+00:0106 21A302          	    25: 	ld hl,buffer	; 2 3 is in buffer initially and will not be calculated
+00:0109 CD8D02          	    26: 	call write_string
+                        	    27: 
+00:010C ED5BB302        	    28: 	ld de,(bufa+0)	; initialize d loop
+00:0110 ED4BB502        	    29: 	ld bc,(bufa+2)	; bcde is the d loop counter
+                        	    30: 
+                        	    31: main: 	
+00:0114 210020          	    32: 	ld hl,st_p
+00:0117 22CB02          	    33: 	ld (vb_p),hl	; initialize the starting prime pointer
+                        	    34: 
+00:011A ED53B302        	    35: 	ld (bufa+0),de	; store d in memory
+00:011E ED43B502        	    36: 	ld (bufa+2),bc	;
+00:0122 DD21C502        	    37: 	ld ix,trid	; load the trial d buffer into ix
+00:0126 CDD301          	    38: 	call cmp32	; executes (ix) - bcde - if nc then trid is larger
+00:0129 3017            	    39: 	jr nc,loop_q	; on c then need to increment maxq and trid
+00:012B D9              	    40: 	exx		; save registers
+00:012C ED5BC302        	    41: 	ld de,(maxq)	; load current maxq
+00:0130 13              	    42: 	inc de		; increment current maxq
+00:0131 ED53C302        	    43: 	ld (maxq),de	; store back to maxq
+00:0135 42              	    44: 	ld b,d		; copy to de to bc
+00:0136 4B              	    45: 	ld c,e		
+00:0137 CDE401          	    46: 	call mul16x16	; multiply the numbers to get the new trid
+00:013A 22C502          	    47: 	ld (trid),hl	; low bits in hl
+00:013D ED53C702        	    48: 	ld (trid+2),de	; high bits in de
+00:0141 D9              	    49: 	exx		; get other registers back
+                        	    50: loop_q:
+00:0142 2ACB02          	    51: 	ld hl,(vb_p)
+00:0145 7E              	    52: 	ld a,(hl)
+00:0146 FD6F            	    53: 	ld iyl,a
+00:0148 23              	    54: 	inc hl
+00:0149 7E              	    55: 	ld a,(hl)
+00:014A FD67            	    56: 	ld iyh,a
+00:014C 23              	    57: 	inc hl
+00:014D 22CB02          	    58: 	ld (vb_p),hl	; initialize divisor q loop 
+00:0150 3AC302          	    59: 	ld a,(maxq)	; check if iy is greater than maxq
+00:0153 FD95            	    60: 	sub iyl		; subtract the low byte
+00:0155 3AC402          	    61: 	ld a,(maxq+1)	; load high byte
+00:0158 FD9C            	    62: 	sbc a,iyh	; carry should be set here if q is larger than maxq
+00:015A 3812            	    63: 	jr c,prime	; exit the q loop
+00:015C CD2E02          	    64: 	call div32x16	; test for divisibility, hl is remainder
+00:015F 7D              	    65: 	ld a,l		; test if hl is zero
+00:0160 B4              	    66: 	or h		; zero flag would be set here if composite
+00:0161 ED5BB302        	    67:         ld de,(bufa+0)  ; but need to restore the d value 
+00:0165 ED4BB502        	    68:         ld bc,(bufa+2)  ;     before we jump out
+00:0169 281B            	    69: 	jr z,composite	; if hl was zero then composite
+00:016B C34201          	    70: 	jp loop_q	; loop q
+00:016E 79              	    71: prime:	ld a,c		; check that bc is zero to store prime in mem
+00:016F B0              	    72: 	or b		; 
+00:0170 C27D01          	    73: 	jp nz,prime_cont
+00:0173 2AC902          	    74: 	ld hl,(cu_p)
+00:0176 73              	    75: 	ld (hl),e	; only do this for 
+00:0177 23              	    76: 	inc hl
+00:0178 72              	    77: 	ld (hl),d
+00:0179 23              	    78: 	inc hl
+00:017A 22C902          	    79: 	ld (cu_p),hl
+                        	    80: prime_cont:
+00:017D CD9701          	    81: 	call buf32	; puts BCDE into the string buffer
+00:0180 21A302          	    82: 	ld hl,buffer	; and writes it out
+00:0183 CD8D02          	    83: 	call write_string
+                        	    84: composite:
+00:0186 CDBF01          	    85: 	call inc32_2	; increment the d loop
+00:0189 DD21BF02        	    86: 	ld ix,maxd
+00:018D CDD301          	    87: 	call cmp32	; check if done d loop
+00:0190 D21401          	    88: 	jp nc,main
+                        	    89: end:
+00:0193 CD9802          	    90: 	call write_newline 
+00:0196 C9              	    91: 	ret
+                        	    92: 
+                        	    93: ;Subroutine to place the 32bit integer BCDE into the string buffer
+                        	    94: ;input: 32bit int BCDE (MSB=b, LSB=e), uses global print buffer at: buffer 
+                        	    95: ;output: none
+                        	    96: ;destroys a,hl
+00:0197 C5              	    97: buf32:		push bc		;save these registers
+00:0198 D5              	    98: 		push de
+                        	    99: 	
+00:0199 21A302          	   100: 		ld hl,buffer
+00:019C 3E10            	   101: 		ld a,16
+00:019E CD7A02          	   102: 		call clear_buf
+00:01A1 7B              	   103: buf32_loop:	ld a,e
+00:01A2 B2              	   104: 		or d
+00:01A3 B1              	   105: 		or c
+00:01A4 B0              	   106: 		or b
+00:01A5 2810            	   107: 		jr z,buf32_end
+00:01A7 CDFB01          	   108: 		call div32_10
+00:01AA 7D              	   109: 		ld a,l
+00:01AB C630            	   110: 		add a,"0"
+00:01AD DD21A302        	   111: 		ld ix,buffer
+00:01B1 CD6902          	   112: 		call push_char_buf
+00:01B4 C3A101          	   113: 		jp buf32_loop
+                        	   114: 	
+00:01B7 3E20            	   115: buf32_end:	ld a," "
+00:01B9 CD6902          	   116: 		call push_char_buf
+00:01BC D1              	   117: 		pop de		;restore these registers
+00:01BD C1              	   118: 		pop bc
+00:01BE C9              	   119: 		ret
+                        	   120: 
+                        	   121: 
+                        	   122: ;Subroutine to increment 32bit integer BCDE by 2
+                        	   123: ;input: 32bit int BCDE (MSB=b, LSB=e)
+                        	   124: ;output: none
+                        	   125: ;destroys a
+00:01BF 3E02            	   126: inc32_2:	ld a,2	; load 2 into a
+00:01C1 83              	   127: 		add a,e	; add to e
+00:01C2 5F              	   128: 		ld e,a	; store back in e
+00:01C3 D0              	   129: 		ret nc	; on nc we can return
+00:01C4 3E00            	   130: 		ld a,0	; and so on...
+00:01C6 8A              	   131: 		adc a,d
+00:01C7 57              	   132: 		ld d,a
+00:01C8 D0              	   133: 		ret nc
+00:01C9 3E00            	   134: 		ld a,0
+00:01CB 89              	   135: 		adc a,c
+00:01CC 4F              	   136: 		ld c,a
+00:01CD D0              	   137: 		ret nc
+00:01CE 3E00            	   138: 		ld a,0
+00:01D0 88              	   139: 		adc a,b
+00:01D1 47              	   140: 		ld b,a
+00:01D2 C9              	   141: 		ret
+                        	   142: 
+                        	   143: ;Subroutine to compare 32bit integer BCDE to 32bit buffer at IX
+                        	   144: ;input: 32bit int BCDE (MSB=b, LSB=e), IX buffer (LSB=IX+0, MSB=IX+3)
+                        	   145: ;output: carry flag will be set if BCDE is larger
+                        	   146: ;destroys a
+00:01D3 DD7E00          	   147: cmp32:		ld a,(ix+0)	; no need to clear carry flag
+00:01D6 93              	   148: 		sub e		; since first is sub
+00:01D7 DD7E01          	   149: 		ld a,(ix+1)
+00:01DA 9A              	   150: 		sbc a,d
+00:01DB DD7E02          	   151: 		ld a,(ix+2)
+00:01DE 99              	   152: 		sbc a,c
+00:01DF DD7E03          	   153: 		ld a,(ix+3)
+00:01E2 98              	   154: 		sbc a,b
+00:01E3 C9              	   155: 		ret
+                        	   156: 
+                        	   157: ;Subroutine to integer multiply two 16bit integers
+                        	   158: ;inputs: DE Multiplier, BC Multiplicand, HL=0
+                        	   159: ;output: DE:HL
+                        	   160: ;https://map.grauw.nl/sources/external/z80bits.html#3
+                        	   161: ;https://tutorials.eeems.ca/Z80ASM/part4.htm#mul16
+                        	   162: mul16x16:
+00:01E4 210000          	   163: 		ld hl,0
+00:01E7 3E10            	   164: 		ld a,16		; need to loop 16 times
+                        	   165: mul16x16_loop:
+00:01E9 29              	   166: 		add hl,hl
+00:01EA CB13            	   167: 		rl e
+00:01EC CB12            	   168: 		rl d
+00:01EE D2F601          	   169: 		jp nc,mul16x16_no
+00:01F1 09              	   170: 		add hl,bc
+00:01F2 D2F601          	   171: 		jp nc,mul16x16_no
+00:01F5 13              	   172: 		inc de
+                        	   173: mul16x16_no:
+00:01F6 3D              	   174: 		dec a
+00:01F7 C2E901          	   175: 		jp nz,mul16x16_loop
+                        	   176: 
+00:01FA C9              	   177: 		ret
+                        	   178: 
+                        	   179: ;Subroutine to integer divide 32bit integer by 10 (little endian)
+                        	   180: ;inputs: put dividend in bcde (lsb=e, msb=b), zero in hl (optional)
+                        	   181: ;output: quotient in bcde (msb = b, lsb=e), remainder in hl
+                        	   182: ;destroys: a, ix
+                        	   183: div32_10:
+00:01FB DD2E20          	   184: 		ld ixl,32	; do the rotate loop 32 times
+00:01FE AF              	   185: 		xor a		; zero a - and clears carry flag
+00:01FF 67              	   186: 		ld h,a		; zero out hl
+00:0200 6F              	   187: 		ld l,a
+                        	   188: 
+                        	   189: div32_10_rot:
+00:0201 CB13            	   190: 		rl e	; rotate least significant byte
+00:0203 CB12            	   191: 		rl d	; rotate all the rest
+00:0205 CB11            	   192: 		rl c
+00:0207 CB10            	   193: 		rl b
+00:0209 CB15            	   194: 		rl l	
+00:020B CB14            	   195: 		rl h
+                        	   196: 
+00:020D 7D              	   197: 		ld a,l		; load trial remainder into a
+00:020E DE0A            	   198: 		sbc a,10	; subtract the divisor lsb
+                        	   199: 
+00:0210 DA1402          	   200: 		jp c,div32_10_ignore	; jump if the carry is set - means we had to borrow
+00:0213 6F              	   201: 		ld l,a
+                        	   202: div32_10_ignore:	; ignore the result if negative
+00:0214 DD2D            	   203: 		dec ixl
+00:0216 C20102          	   204: 		jp nz,div32_10_rot	; do rl/sbc/check carry - 32 times
+                        	   205: 	
+00:0219 CB13            	   206: 		rl e	; at end of 32 bits still need to rotate bcde
+00:021B CB12            	   207: 		rl d
+00:021D CB11            	   208: 		rl c
+00:021F CB10            	   209: 		rl b
+                        	   210: 
+00:0221 7B              	   211: 		ld a,e 	; all these registers need to be inverted
+00:0222 2F              	   212: 		cpl
+00:0223 5F              	   213: 		ld e,a
+00:0224 7A              	   214: 		ld a,d
+00:0225 2F              	   215: 		cpl
+00:0226 57              	   216: 		ld d,a
+00:0227 79              	   217: 		ld a,c
+00:0228 2F              	   218: 		cpl
+00:0229 4F              	   219: 		ld c,a
+00:022A 78              	   220: 		ld a,b
+00:022B 2F              	   221: 		cpl
+00:022C 47              	   222: 		ld b,a
+                        	   223: 
+00:022D C9              	   224: 		ret		; div32_10
+                        	   225: 
+                        	   226: ;Subroutine to integer divide 32bit integer by 16bit (little endian)
+                        	   227: ;inputs: put dividend in bcde (lsb=e, msb=b), zero in hl (optional), put divisor in iy
+                        	   228: ;output: quotient in bcde (msb = b, lsb=e), remainder in hl, divisor in iy
+                        	   229: ;destroys: a, ix
+                        	   230: div32x16:
+00:022E DD2E20          	   231: 		ld ixl,32	; do the rotate loop 32 times
+00:0231 AF              	   232: 		xor a		; zero a - and clears carry flag
+00:0232 67              	   233: 		ld h,a		; zero out hl
+00:0233 6F              	   234: 		ld l,a
+                        	   235: 
+                        	   236: div32x16_rot:
+00:0234 CB13            	   237: 		rl e	; rotate least significant byte
+00:0236 CB12            	   238: 		rl d	; rotate all the rest
+00:0238 CB11            	   239: 		rl c
+00:023A CB10            	   240: 		rl b
+00:023C CB15            	   241: 		rl l	
+00:023E CB14            	   242: 		rl h
+                        	   243: 
+00:0240 7D              	   244: 		ld a,l		; load trial remainder into a
+00:0241 FD9D            	   245: 		sbc a,iyl	; subtract the divisor lsb
+00:0243 DD67            	   246: 		ld ixh,a	; store the result back to (ixh a)
+00:0245 7C              	   247: 		ld a,h		; and so on for all 2 bytes
+00:0246 FD9C            	   248: 		sbc a,iyh
+                        	   249: 
+00:0248 DA4F02          	   250: 		jp c,div32x16_ignore	; jump if the carry is set - means we had to borrow
+00:024B 67              	   251: 		ld h,a		; since subtraction was possible (no carry)
+00:024C DD7C            	   252: 		ld a,ixh	; store result back in hl
+00:024E 6F              	   253: 		ld l,a
+                        	   254: div32x16_ignore:	; ignore the result if negative
+00:024F DD2D            	   255: 		dec ixl
+00:0251 C23402          	   256: 		jp nz,div32x16_rot	; do rl/sbc/check carry - 32 times
+                        	   257: 	
+00:0254 CB13            	   258: 		rl e	; at end of 32 bits still need to rotate bcde
+00:0256 CB12            	   259: 		rl d
+00:0258 CB11            	   260: 		rl c
+00:025A CB10            	   261: 		rl b
+                        	   262: 		
+00:025C 7B              	   263: 		ld a,e 	; all these registers need to be inverted
+00:025D 2F              	   264: 		cpl
+00:025E 5F              	   265: 		ld e,a
+00:025F 7A              	   266: 		ld a,d
+00:0260 2F              	   267: 		cpl
+00:0261 57              	   268: 		ld d,a
+00:0262 79              	   269: 		ld a,c
+00:0263 2F              	   270: 		cpl
+00:0264 4F              	   271: 		ld c,a
+00:0265 78              	   272: 		ld a,b
+00:0266 2F              	   273: 		cpl
+00:0267 47              	   274: 		ld b,a
+                        	   275: 
+00:0268 C9              	   276: 		ret		; div32x16
+                        	   277: 
+                        	   278: ;Subroutine to push a character into the front of the character buffer
+                        	   279: ;Inputs: IX address of character buffer, A is the character
+                        	   280: ;Destroys IX
+00:0269 C5              	   281: push_char_buf:	push bc		; get a register to use
+00:026A 47              	   282: push_char_loop:	ld b,a		; put char into b
+00:026B DD7E00          	   283: 		ld a,(ix+0)	; fetch char from memory
+00:026E DD7000          	   284: 		ld (ix+0),b	; write char to memory
+00:0271 DD23            	   285: 		inc ix		; move to next mem loc
+00:0273 FE24            	   286: 		cp "$"		; test if we read a zero from memory
+00:0275 C26A02          	   287: 		jp nz,push_char_loop
+00:0278 C1              	   288: 		pop bc		; restore register
+00:0279 C9              	   289: 		ret
+                        	   290: 
+                        	   291: ;Subroutine to clear character buffer
+                        	   292: ;Inputs: HL address of character buffer, A number of bytes to clear
+00:027A 3624            	   293: clear_buf: 	ld (hl),"$"
+00:027C 23              	   294:  		inc hl
+00:027D 3D              	   295: 		dec a
+00:027E C27A02          	   296: 		jp nz,clear_buf
+00:0281 C9              	   297: 		ret
+                        	   298: 		
+                        	   299: ;Subroutine to write a single char to serial output
+                        	   300: ;pass char in A register
+00:0282 D5              	   301: write_char: 		push de
+00:0283 C5              	   302: 			push bc
+00:0284 0E02            	   303: 			ld c,2	; function 2
+00:0286 5F              	   304: 			ld e,a	; char to write
+00:0287 CD0500          	   305: 			call 5	; call bios
+00:028A C1              	   306: 			pop bc
+00:028B D1              	   307: 			pop de
+00:028C C9              	   308: 			ret
+                        	   309: 
+                        	   310: ;Subroutine to write a zero-terminated string to serial output
+                        	   311: ;Pass address of string in HL register
+                        	   312: ;No error checking
+00:028D D5              	   313: write_string:           push de ; save de
+00:028E C5              	   314:                         push bc
+00:028F 0E09            	   315:                         ld c,9  ; function 9
+00:0291 EB              	   316:                         ex de,hl
+00:0292 CD0500          	   317:                         call 5
+00:0295 C1              	   318:                         pop bc
+00:0296 D1              	   319:                         pop de
+00:0297 C9              	   320:                         ret
+                        	   321: 
+                        	   322: ;
+                        	   323: ;Subroutine to start a new line
+00:0298 3E0D            	   324: write_newline:          ld      a,00dh                  ;ASCII carriage return character
+00:029A CD8202          	   325:                         call    write_char
+00:029D 3E0A            	   326:                         ld      a,00ah                  ;new line (line feed) character
+00:029F CD8202          	   327:                         call    write_char
+00:02A2 C9              	   328:                         ret
+                        	   329: 
+                        	   330: 
+00:02A3 3220332024242424	   331: buffer:	dfb "2 3 $$$$"	; 16 character buffer for printing out numbers
+00:02AB 2424242424242424	   332: 	dfb "$$$$$$$$"
+00:02B3 0500            	   333: bufa:	dfw 5,0			; buf a, 32 bit, 4 bytes
+00:02B5 0000
+00:02B7 0000            	   334: bufb:	dfw 0,0			; buf b, 32 bit, 4 bytes
+00:02B9 0000
+00:02BB 0000            	   335: bufc:	dfw 0,0			; buf c, 32 bit, 4 bytes
+00:02BD 0000
+00:02BF E000            	   336: maxd:	dfw 00e0h,0ffe2h	; buf d, 32 bit, 4 bytes
+00:02C1 E2FF
+00:02C3 0200            	   337: maxq:	dfw 2 			; max value of q loop
+00:02C5 0400            	   338: trid:	dfw 4,0			; trial d (q^2)
+00:02C7 0000
+00:02C9 0220            	   339: cu_p:	dfw 02002h		; current prime (stored) (3 starting)
+00:02CB 0020            	   340: vb_p:	dfw 02000h		; prime pointer	
+                        	   341: 
+
+
+Symbols by name:
+buf32                            A:0197
+buf32_end                        A:01B7
+buf32_loop                       A:01A1
+bufa                             A:02B3
+bufb                             A:02B7
+bufc                             A:02BB
+buffer                           A:02A3
+clear_buf                        A:027A
+cmp32                            A:01D3
+composite                        A:0186
+cu_p                             A:02C9
+div32_10                         A:01FB
+div32_10_ignore                  A:0214
+div32_10_rot                     A:0201
+div32x16                         A:022E
+div32x16_ignore                  A:024F
+div32x16_rot                     A:0234
+end                              A:0193
+inc32_2                          A:01BF
+loop_q                           A:0142
+main                             A:0114
+maxd                             A:02BF
+maxq                             A:02C3
+mul16x16                         A:01E4
+mul16x16_loop                    A:01E9
+mul16x16_no                      A:01F6
+prime                            A:016E
+prime_cont                       A:017D
+push_char_buf                    A:0269
+push_char_loop                   A:026A
+st_p                             E:2000
+trid                             A:02C5
+vb_p                             A:02CB
+write_char                       A:0282
+write_newline                    A:0298
+write_string                     A:028D
+
+Symbols by value:
+0114 main
+0142 loop_q
+016E prime
+017D prime_cont
+0186 composite
+0193 end
+0197 buf32
+01A1 buf32_loop
+01B7 buf32_end
+01BF inc32_2
+01D3 cmp32
+01E4 mul16x16
+01E9 mul16x16_loop
+01F6 mul16x16_no
+01FB div32_10
+0201 div32_10_rot
+0214 div32_10_ignore
+022E div32x16
+0234 div32x16_rot
+024F div32x16_ignore
+0269 push_char_buf
+026A push_char_loop
+027A clear_buf
+0282 write_char
+028D write_string
+0298 write_newline
+02A3 buffer
+02B3 bufa
+02B7 bufb
+02BB bufc
+02BF maxd
+02C3 maxq
+02C5 trid
+02C9 cu_p
+02CB vb_p
+2000 st_p

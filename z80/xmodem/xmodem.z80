@@ -1,0 +1,170 @@
+; based on 6502 version http://www.6502.org/source/io/xmodem/xmodem-receive.txt
+; re-coded by Tom Lovie 2023-03-23
+
+monitor_warm_start:	equ	046fh
+
+SOH	equ 01h		; start block
+EOT	equ 04h		; end of text marker
+ACK	equ 06h		; good block acknowledged
+NAK	equ 15h		; bad block acknowledged
+CAN	equ 18h		; cancel (not standard, not supported)
+CR	equ 0dh		; carriage return
+LF	equ 0ah		; line feed
+ESC	equ 1bh		; ESC to exit
+
+rbuff:	equ 0c00h	; page aligned receive buffer
+rbuffp: equ 0ch		; page of receive buffer
+sbuff:	equ 1000h	; storage buffer to place received data
+sbuffp: equ 10h		; storage buffer page
+
+	org 0800h
+
+		call XModem
+		jp monitor_warm_start
+
+XModem:		
+		ld hl,msg
+		call write_string
+		ld hl,sbuff	
+		ld (ptr),hl	; initialize the storage pointer
+		ld a,01h
+		ld (blkno),a	; start at block number 1
+StartX:		ld a,NAK	; Start in CRC mode - no fallback
+		call put_chr	; send it
+		ld a,00h	; loop counter in a
+		call GetByte	; try to get a byte
+		jr c,GotByte
+		jr nc,StartX	; if not try again
+
+StartBlk: 	ld a,00h	; loop counter in a
+		call GetByte	; try to get a byte
+		jr nc,StartBlk
+GotByte:	cp ESC		; want to quit
+		ret z		
+		cp SOH		; start of block?
+		jr z,BegBlk
+		cp EOT		; end of text
+		jr nz,BadCrc
+		jr Done
+BegBlk:		ld hl,rbuff	; start hl at the receive buffer
+GetBlk:		ld a,00h	; 3 second window to receive char
+GetBlk1:	call GetByte	; get next char
+		jr nc,BadCrc	; not actually BadCrc, just sending NAK
+GetBlk2:	ld (hl),a	; store the character in buffer pointed to by (hl)
+		inc hl		; increment the buffer
+		ld a,83h
+		cp l		; <01><FE><128 bytes><CHKSUM>
+		jr nz,GetBlk	; get 131 characters (0x83)
+		ld l,00h	; start at beginning of buffer again (now filled with a block)
+		ld a,(blkno)	; actual block number
+		cp (hl)		; sent block number
+		jr z,GoodBlk1	; block number is expected
+		jr ErrorOut	; error out of the xmodem routine
+GoodBlk1:	xor 0ffh	; compliment the actual block number
+		inc hl 		
+		cp (hl)		; compare to second byte
+		jr z,GoodBlk2	; block number compliment is expected
+		jr ErrorOut	; error out of the xmodem routine
+GoodBlk2:	ld h,rbuffp	; point hl at the receive buffer
+		ld l,81h	; last byte
+		ld a,00h	; initialize a
+CalcCrc:	add (hl)	; compute running total starting at 82h
+		dec l
+		jr nz,CalcCrc	
+		add a,(hl)	; do the block number as well
+		inc a		; because blockno + cpl is always 255.
+		ld l,82h	; (hl) is the checksum
+		cp (hl)
+		jr z,GoodCrc
+BadCrc:		call Flush	; flush serial buffer
+		ld a,NAK	; and send
+		call put_chr	; a NAK
+		jr StartBlk	; restart the block
+GoodCrc:	ld l,02h 	; hl is now pointing at the start of the data
+		ld de,(ptr)	; de is now pointing at the storage buffer position
+		ld c,80h	; 128 bytes
+		ld b,00h	;
+		ldir		; copy the block
+		ld (ptr),de	; store the current position of the storage buffer
+		ld a,(blkno)	; load the block number
+		inc a
+		ld (blkno),a	; store the block number back
+		ld a,ACK	; send ACK
+		call put_chr
+		jp StartBlk	; get next block
+Done:		ld a,ACK
+		call put_chr
+		call Flush
+		ld hl,good	; load success message
+		call write_string
+		ret
+
+ErrorOut:       ld hl,err       ; print error message and exit if block number is unexpected
+                call write_string
+                call Flush      ; discard remaining buffer
+                ret             ; return after fatal error
+
+; subroutine to wait a set amount of time to get a byte
+; Byte will be in A, destroys BC (delay loop)
+GetByte:	ld b,a
+		ld c,a
+GetByteLoop:
+		call get_chr
+		ret c			; return if got chr (carry set)
+		dec c
+		jr nz,GetByteLoop
+		dec b
+		jr nz,GetByteLoop	; delay loop
+		or a			; clear carry flag
+		ret
+
+; subroutine to flush the receive buffer
+; destroys A
+Flush:		ld a,80h
+		call GetByte
+		jr c,Flush
+		ret		
+
+
+;Get one byte from the serial port if available.
+;Returns with byte in A reg with carry flag set, if carry flag clear means no character available
+get_chr:	or	a			;clear carry flag
+		in      a,(3)                   ;get status
+                and     002h                    ;check RxRDY bit
+                ret	z			;not ready, quit
+                in      a,(2)                   ;get char
+		scf				;set carry flag to show we got a char
+		ret
+
+;
+;Subroutine to write a zero-terminated string to serial output
+;Pass address of string in HL register
+;No error checking
+write_string:           in      a,(3)                   ;read status
+                        and     001h                    ;check TxRDY bit
+                        jp      z,write_string          ;loop if not set
+                        ld      a,(hl)                  ;get char from string
+                        and     a                       ;check if 0
+                        ret     z                       ;yes, finished
+                        out     (2),a                   ;no, write char to output
+                        inc     hl                      ;next char in string
+                        jp      write_string            ;start over
+
+;
+;Puts a single char (byte value) on serial output
+;Call with char to send in A register. Uses B register
+put_chr:	ld      b,a                     ;store char
+put_chr1:	in      a,(3)                   ;check if OK to send
+                and     001h                    ;check TxRDY bit
+                jp      z,put_chr1       ;loop if not set
+                ld      a,b                     ;get char back
+                out     (2),a                   ;send to output
+                ret                             ;returns with char in a
+
+
+ptr:	dfw 0
+blkno:	dfb 0
+err:	dfb "Up Err!",CR,LF,0
+good:	dfb "Up Ok!",CR,LF,0
+msg:	dfb CR,LF,"X/CSUM <Esc> to q",CR,LF,0
+

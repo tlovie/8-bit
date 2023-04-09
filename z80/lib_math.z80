@@ -1,0 +1,53 @@
+;Subroutine to integer divide two 32bit integers (little endian)
+;inputs: put dividend in bufa, put divisor in bufc
+;output: quotient in bufa, remainder in bufb, divisor in bufc
+;destroys: a, bc, hl, ix, iy
+div32x32:
+        ld ix,bufa
+        ld iy,bufb
+        ld b,32         ; do the rotate loop 32 times
+        xor a           ; zero a - and clears carry flag
+        ld (bufb+0),a   ; zero out bufb
+        ld (bufb+1),a
+        ld (bufb+2),a
+        ld (bufb+3),a
+
+div32x32_rot:           ; cannot rotate in memory directly
+        rl (ix+0)       ; rotate least significant byte
+        rl (ix+1)       ; rotate all the rest
+        rl (ix+2)
+        rl (ix+3)
+        rl (iy+0)       ; bufb
+        rl (iy+1)
+        rl (iy+2)       ; this is zero for 32 bits
+        rl (iy+3)       ; so a carry will never rotate out
+
+        ; now subract bufc from bufb
+        ld a,(bufb+0)   ; load bufb into a
+        sbc a,(iy+4)    ; subtract the divisor (bufc)
+        ld h,a          ; store the result back to hlca
+        ld a,(bufb+1)   ; and so on for all 4 bytes
+        sbc a,(iy+5)
+        ld l,a
+        ld a,(bufb+2)
+        sbc a,(iy+6)
+        ld c,a
+        ld a,(bufb+3)
+        sbc a,(iy+7)    ; now hlca has the result of the subtraction
+
+        jp c,div32x32_ign       ; jump if the carry is set - means we had to borrow
+        ld (iy+0),h     ; nc means sbc worked - store result in bufb
+        ld (iy+1),l     ; since subtraction was possible
+        ld (iy+2),c
+        ld (iy+3),a
+div32x32_ign:           ; ignore the result if negative
+        ccf             ; invert the carry flag - wrong sense for quotient
+        djnz div32x32_rot       ; do rl/sbc/check 32 times
+
+        rl (ix+0)       ; at end of 32 bits still need to rotate bufa
+        rl (ix+1)
+        rl (ix+2)
+        rl (ix+3)
+
+        ret             ; div32x32
+

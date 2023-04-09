@@ -1,0 +1,125 @@
+;
+;Memory dump
+;Displays a 256-byte block of memory in 16-byte rows.
+;Called with address of start of block in HL
+memory_dump:            ld      (current_location),hl   ;store address of block to be displayed
+                        ld      a,000h
+                        ld      (byte_count),a          ;initialize byte count
+                        ld      (line_count),a          ;initialize line count
+                        jp      dump_new_line
+dump_next_byte:         ld      hl,(current_location)   ;get byte address from storage,
+                        ld      a,(hl)                  ;get byte to be converted to string
+                        inc     hl                      ;increment address and
+                        ld      (current_location),hl   ;store back
+                        ld      hl,buffer               ;location to store string
+                        call    byte_to_hex_string      ;convert
+                        ld      hl,buffer               ;display string
+                        call    write_string
+                        ld      a,(byte_count)          ;next byte
+                        inc     a
+                        jp      z,dump_done             ;stop when 256 bytes displayed
+                        ld      (byte_count),a          ;not finished yet, store
+                        ld      a,(line_count)          ;end of line (16 characters)?
+                        cp      00fh                    ;yes, start new line
+                        jp      z,dump_new_line
+                        inc     a                       ;no, increment line count
+                        ld      (line_count),a
+                        ld      a,020h                  ;print space
+                        call    write_char
+                        jp      dump_next_byte          ;continue
+dump_new_line:          ld      a,000h                  ;reset line count to zero
+                        ld      (line_count),a
+                        call    write_newline
+                        ld      hl,(current_location)   ;location of start of line
+                        ld      a,h                     ;high byte of address
+                        ld      hl, buffer
+                        call    byte_to_hex_string      ;convert
+                        ld      hl,buffer
+                        call    write_string            ;write high byte
+                        ld      hl,(current_location)
+                        ld      a,l                     ;low byte of address
+                        ld      hl, buffer
+                        call    byte_to_hex_string      ;convert
+                        ld      hl,buffer
+                        call    write_string            ;write low byte
+                        ld      a,020h                  ;space
+                        call    write_char
+                        jp      dump_next_byte          ;now write 16 bytes
+dump_done:              ld      a,000h
+                        ld      hl,buffer
+                        ld      (hl),a                  ;clear buffer of last string
+                        call    write_newline
+                        ret
+
+
+;
+;Creates a two-char hex string from the byte value passed in register A
+;Location to place string passed in HL
+;String is zero-terminated, stored in 3 locations starting at HL
+;Also uses registers b,d, and e
+byte_to_hex_string:     ld      b,a                     ;store original byte
+                        srl     a                       ;shift right 4 times, putting
+                        srl     a                       ;high nybble in low-nybble spot
+                        srl     a                       ;and zeros in high-nybble spot
+                        srl     a
+                        ld      d,000h                  ;prepare for 16-bit addition
+                        ld      e,a                     ;de contains offset
+                        push    hl                      ;temporarily store string target address
+                        ld      hl,hex_char_table       ;use char table to get high-nybble character
+                        add     hl,de                   ;add offset to start of table
+                        ld      a,(hl)                  ;get char
+                        pop     hl                      ;get string target address
+                        ld      (hl),a                  ;store first char of string
+                        inc     hl                      ;point to next string target address
+                        ld      a,b                     ;get original byte back from reg b
+                        and     00fh                    ;mask off high-nybble
+                        ld      e,a                     ;d still has 000h, now de has offset
+                        push    hl                      ;temp store string target address
+                        ld      hl,hex_char_table       ;start of table
+                        add     hl,de                   ;add offset
+                        ld      a,(hl)                  ;get char
+                        pop     hl                      ;get string target address
+                        ld      (hl),a                  ;store second char of string
+                        inc     hl                      ;point to third location
+                        ld      a,00h                   ;zero to terminate string
+                        ld      (hl),a                  ;store the zero
+                        ret                             ;done
+
+;Subroutine to write a single char to cpm console
+;pass char in A register
+;write_char:             push de
+;                        push bc
+;                        ld c,2  ; function 2
+;                        ld e,a  ; char to write
+;                        call 5  ; call bios
+;                        pop bc
+;                        pop de
+;                        ret
+
+;Subroutine to write a zero-terminated string to cpm console
+;Pass address of string in HL register
+;No error checking
+;write_string:           push de ; save de
+;                        push bc
+;                        ld c,9  ; function 9
+;                        ex de,hl
+;                        call 5
+;                        pop bc
+;                        pop de
+;                        ret
+
+;
+;Subroutine to start a new line
+write_newline:          ld      a,00dh                  ;ASCII carriage return character
+                        call    write_char
+                        ld      a,00ah                  ;new line (line feed) character
+                        call    write_char
+                        ret
+
+
+hex_char_table: dfb     "0123456789ABCDEF"
+current_location:       dfw 0
+line_count:             dfb 0
+byte_count:             dfb 0
+buffer:			blk 40,0
+

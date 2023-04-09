@@ -1,0 +1,34 @@
+CP/M RMAC ASSEM 1.1
+P0100 =         equ1	equ	rsxstart +0100h  ;set this equate in the CCP
+P01D0 =         equ2	equ	fixchain +0100h  ;set this equate in the CCP
+P01EB =         equ3	equ	fixchain1+0100h  ;set this equate in the CCP
+P01F0 =         equ4	equ	fixchain2+0100h  ;set this equate in the CCP
+P0200 =         equ5	equ	rsx$chain+0100h  ;set this equate in the CCP
+P02CA =         equ6	equ	reloc    +0100h  ;set this equate in the CCP
+P030F =         equ7	equ	calcdest +0100h  ;set this equate in the CCP
+P038D =         equ8	equ	scbaddr	 +0100h  ;set this equate in the CCP
+P038F =         equ9	equ	banked	 +0100h  ;set this equate in the CCP
+P0394 =         equ10	equ	rsxend	 +0100h  ;set this equate in the CCP
+P0401 =         ccporg	equ	CCP		 ;set origin to this in CCP
+P0369 =         patch	equ	patcharea+0100h  ;LOADER patch area
+0294
+007H USE FACTOR
+END OF ASSEMBLY
+
+CP/M MACRO ASSEM 2.0
+P0100 =         EQU1	EQU	RSXSTART  ;DOES THIS ADR MATCH LOADER'S?
+P01D0 =         EQU2	EQU	FIXCHAIN  ;DOES THIS ADR MATCH LOADER'S?
+P01EB =         EQU3	EQU	FIXCHAIN1 ;DOES THIS ADR MATCH LOADER'S?
+P01F0 =         EQU4	EQU	FIXCHAIN2 ;DOES THIS ADR MATCH LOADER'S?
+P0200 =         EQU5	EQU	RSX$CHAIN ;DOES THIS ADR MATCH LOADER'S?
+P02CA =         EQU6	EQU	RELOC     ;DOES THIS ADR MATCH LOADER'S?
+P030F =         EQU7	EQU	CALCDEST  ;DOES THIS ADR MATCH LOADER'S?
+P038D =         EQU8	EQU	SCBADDR   ;DOES THIS ADR MATCH LOADER'S?
+P038F =         EQU9	EQU	BANKED    ;DOES THIS ADR MATCH LOADER'S?
+P0394 =         EQU10	EQU	RSXEND    ;DOES THIS ADR MATCH LOADER'S?
+P0401 =         EQU11	EQU	CCPORG    ;DOES THIS ADR MATCH LOADER'S?
+P0D80 =         EQU12	EQU	CCPEND    ;THIS SHOULD BE 0D80H
+0F2D
+016H USE FACTOR
+END OF ASSEMBLY
+

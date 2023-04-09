@@ -1,0 +1,280 @@
+Sections:
+00: "seg800" (800-929)
+
+
+Source: "xmodem.z80"
+                        	     1: ; based on 6502 version http://www.6502.org/source/io/xmodem/xmodem-receive.txt
+                        	     2: ; re-coded by Tom Lovie 2023-03-23
+                        	     3: 
+                        	     4: monitor_warm_start:	equ	046fh
+                        	     5: 
+                        	     6: SOH	equ 01h		; start block
+                        	     7: EOT	equ 04h		; end of text marker
+                        	     8: ACK	equ 06h		; good block acknowledged
+                        	     9: NAK	equ 15h		; bad block acknowledged
+                        	    10: CAN	equ 18h		; cancel (not standard, not supported)
+                        	    11: CR	equ 0dh		; carriage return
+                        	    12: LF	equ 0ah		; line feed
+                        	    13: ESC	equ 1bh		; ESC to exit
+                        	    14: 
+                        	    15: rbuff:	equ 0c00h	; page aligned receive buffer
+                        	    16: rbuffp: equ 0ch		; page of receive buffer
+                        	    17: sbuff:	equ 1000h	; storage buffer to place received data
+                        	    18: sbuffp: equ 10h		; storage buffer page
+                        	    19: 
+                        	    20: 	org 0800h
+                        	    21: 
+00:0800 CD0608          	    22: 		call XModem
+00:0803 C36F04          	    23: 		jp monitor_warm_start
+                        	    24: 
+                        	    25: XModem:		
+00:0806 211309          	    26: 		ld hl,msg
+00:0809 CDDF08          	    27: 		call write_string
+00:080C 210010          	    28: 		ld hl,sbuff	
+00:080F 22FB08          	    29: 		ld (ptr),hl	; initialize the storage pointer
+00:0812 3E01            	    30: 		ld a,01h
+00:0814 32FD08          	    31: 		ld (blkno),a	; start at block number 1
+00:0817 3E15            	    32: StartX:		ld a,NAK	; Start in CRC mode - no fallback
+00:0819 CDEF08          	    33: 		call put_chr	; send it
+00:081C 3E00            	    34: 		ld a,00h	
+00:081E 32FF08          	    35: 		ld (retry2),a	; set loop counter for 3 second delay
+00:0821 CDB808          	    36: 		call GetByte	; try to get a byte
+00:0824 380C            	    37: 		jr c,GotByte
+00:0826 30EF            	    38: 		jr nc,StartX	; if not try again
+                        	    39: 
+00:0828 3E00            	    40: StartBlk: 	ld a,00h	
+00:082A 32FF08          	    41: 		ld (retry2),a	; set loop counter for 3 second delay
+00:082D CDB808          	    42: 		call GetByte	; try to get a byte
+00:0830 30F6            	    43: 		jr nc,StartBlk
+00:0832 FE1B            	    44: GotByte:	cp ESC		; want to quit
+00:0834 C8              	    45: 		ret z		
+00:0835 FE01            	    46: 		cp SOH		; start of block?
+00:0837 2806            	    47: 		jr z,BegBlk
+00:0839 FE04            	    48: 		cp EOT		; end of text
+00:083B 2039            	    49: 		jr nz,BadCrc
+00:083D 1860            	    50: 		jr Done
+00:083F 21000C          	    51: BegBlk:		ld hl,rbuff	; start hl at the receive buffer
+00:0842 3E00            	    52: GetBlk:		ld a,00h	; 3 second window to receive char
+00:0844 32FF08          	    53: 		ld (retry2),a	
+00:0847 CDB808          	    54: GetBlk1:	call GetByte	; get next char
+00:084A 302A            	    55: 		jr nc,BadCrc	; not actually BadCrc, just sending NAK
+00:084C 77              	    56: GetBlk2:	ld (hl),a	; store the character in buffer pointed to by (hl)
+00:084D 23              	    57: 		inc hl		; increment the buffer
+00:084E 3E83            	    58: 		ld a,83h
+00:0850 BD              	    59: 		cp l		; <01><FE><128 bytes><CHKSUM>
+00:0851 20EF            	    60: 		jr nz,GetBlk	; get 131 characters (0x83)
+00:0853 2E00            	    61: 		ld l,00h	; start at beginning of buffer again (now filled with a block)
+00:0855 3AFD08          	    62: 		ld a,(blkno)	; actual block number
+00:0858 BE              	    63: 		cp (hl)		; sent block number
+00:0859 2802            	    64: 		jr z,GoodBlk1	; block number is expected
+00:085B 1851            	    65: 		jr ErrorOut	; error out of the xmodem routine
+00:085D EEFF            	    66: GoodBlk1:	xor 0ffh	; compliment the actual block number
+00:085F 23              	    67: 		inc hl 		
+00:0860 BE              	    68: 		cp (hl)		; compare to second byte
+00:0861 2802            	    69: 		jr z,GoodBlk2	; block number compliment is expected
+00:0863 1849            	    70: 		jr ErrorOut	; error out of the xmodem routine
+00:0865 260C            	    71: GoodBlk2:	ld h,rbuffp	; point hl at the receive buffer
+00:0867 2E81            	    72: 		ld l,81h	; last byte
+00:0869 3E00            	    73: 		ld a,00h	; initialize a
+00:086B 86              	    74: CalcCrc:	add (hl)	; compute running total starting at 82h
+00:086C 2D              	    75: 		dec l
+00:086D 20FC            	    76: 		jr nz,CalcCrc	
+00:086F 86              	    77: 		add a,(hl)	; do the block number as well
+00:0870 3C              	    78: 		inc a		; because blockno + cpl is always 255.
+00:0871 2E82            	    79: 		ld l,82h	; (hl) is the checksum
+00:0873 BE              	    80: 		cp (hl)
+00:0874 280A            	    81: 		jr z,GoodCrc
+00:0876 CDCA08          	    82: BadCrc:		call Flush	; flush serial buffer
+00:0879 3E15            	    83: 		ld a,NAK	; and send
+00:087B CDEF08          	    84: 		call put_chr	; a NAK
+00:087E 18A8            	    85: 		jr StartBlk	; restart the block
+00:0880 2E02            	    86: GoodCrc:	ld l,02h 	; hl is now pointing at the start of the data
+00:0882 ED5BFB08        	    87: 		ld de,(ptr)	; de is now pointing at the storage buffer position
+00:0886 0E80            	    88: 		ld c,80h	; 128 bytes
+00:0888 0600            	    89: 		ld b,00h	;
+00:088A EDB0            	    90: 		ldir		; copy the block
+00:088C ED53FB08        	    91: 		ld (ptr),de	; store the current position of the storage buffer
+00:0890 3AFD08          	    92: 		ld a,(blkno)	; load the block number
+00:0893 3C              	    93: 		inc a
+00:0894 32FD08          	    94: 		ld (blkno),a	; store the block number back
+00:0897 3E06            	    95: 		ld a,ACK	; send ACK
+00:0899 CDEF08          	    96: 		call put_chr
+00:089C C32808          	    97: 		jp StartBlk	; get next block
+00:089F 3E06            	    98: Done:		ld a,ACK
+00:08A1 CDEF08          	    99: 		call put_chr
+00:08A4 CDCA08          	   100: 		call Flush
+00:08A7 210A09          	   101: 		ld hl,good	; load success message
+00:08AA CDDF08          	   102: 		call write_string
+00:08AD C9              	   103: 		ret
+                        	   104: 
+00:08AE 210009          	   105: ErrorOut:       ld hl,err       ; print error message and exit if block number is unexpected
+00:08B1 CDDF08          	   106:                 call write_string
+00:08B4 CDCA08          	   107:                 call Flush      ; discard remaining buffer
+00:08B7 C9              	   108:                 ret             ; return after fatal error
+                        	   109: 
+                        	   110: ; subroutine to wait a set amount of time to get a byte
+                        	   111: ; Byte will be in A, destroys BC (delay loop)
+00:08B8 ED4BFE08        	   112: GetByte:	ld bc,(retry)		; high retry counter, b = (retry +1), c=(retry)
+00:08BC 0E00            	   113: 		ld c,00h		; store 0 in c (retry counter)
+                        	   114: GetByteLoop:
+00:08BE CDD508          	   115: 		call get_chr
+00:08C1 D8              	   116: 		ret c			; return if got chr (carry set)
+00:08C2 0D              	   117: 		dec c
+00:08C3 20F9            	   118: 		jr nz,GetByteLoop
+00:08C5 05              	   119: 		dec b
+00:08C6 20F6            	   120: 		jr nz,GetByteLoop	; delay loop
+00:08C8 B7              	   121: 		or a			; clear carry flag
+00:08C9 C9              	   122: 		ret
+                        	   123: 
+                        	   124: ; subroutine to flush the receive buffer
+                        	   125: ; destroys A
+00:08CA 3E80            	   126: Flush:		ld a,80h
+00:08CC 32FF08          	   127: 		ld (retry2),a
+00:08CF CDB808          	   128: 		call GetByte
+00:08D2 38F6            	   129: 		jr c,Flush
+00:08D4 C9              	   130: 		ret		
+                        	   131: 
+                        	   132: 
+                        	   133: ;Get one byte from the serial port if available.
+                        	   134: ;Returns with byte in A reg with carry flag set, if carry flag clear means no character available
+00:08D5 B7              	   135: get_chr:	or	a			;clear carry flag
+00:08D6 DB03            	   136: 		in      a,(3)                   ;get status
+00:08D8 E602            	   137:                 and     002h                    ;check RxRDY bit
+00:08DA C8              	   138:                 ret	z			;not ready, quit
+00:08DB DB02            	   139:                 in      a,(2)                   ;get char
+00:08DD 37              	   140: 		scf				;set carry flag to show we got a char
+00:08DE C9              	   141: 		ret
+                        	   142: 
+                        	   143: ;
+                        	   144: ;Subroutine to write a zero-terminated string to serial output
+                        	   145: ;Pass address of string in HL register
+                        	   146: ;No error checking
+00:08DF DB03            	   147: write_string:           in      a,(3)                   ;read status
+00:08E1 E601            	   148:                         and     001h                    ;check TxRDY bit
+00:08E3 CADF08          	   149:                         jp      z,write_string          ;loop if not set
+00:08E6 7E              	   150:                         ld      a,(hl)                  ;get char from string
+00:08E7 A7              	   151:                         and     a                       ;check if 0
+00:08E8 C8              	   152:                         ret     z                       ;yes, finished
+00:08E9 D302            	   153:                         out     (2),a                   ;no, write char to output
+00:08EB 23              	   154:                         inc     hl                      ;next char in string
+00:08EC C3DF08          	   155:                         jp      write_string            ;start over
+                        	   156: 
+                        	   157: ;
+                        	   158: ;Puts a single char (byte value) on serial output
+                        	   159: ;Call with char to send in A register. Uses B register
+00:08EF 47              	   160: put_chr:	ld      b,a                     ;store char
+00:08F0 DB03            	   161: put_chr1:	in      a,(3)                   ;check if OK to send
+00:08F2 E601            	   162:                 and     001h                    ;check TxRDY bit
+00:08F4 CAF008          	   163:                 jp      z,put_chr1       ;loop if not set
+00:08F7 78              	   164:                 ld      a,b                     ;get char back
+00:08F8 D302            	   165:                 out     (2),a                   ;send to output
+00:08FA C9              	   166:                 ret                             ;returns with char in a
+                        	   167: 
+                        	   168: 
+00:08FB 0000            	   169: ptr:	dfw 0
+00:08FD 00              	   170: blkno:	dfb 0
+00:08FE 00              	   171: retry:  dfb 0
+00:08FF 00              	   172: retry2: dfb 0
+00:0900 55702045727221  	   173: err:	dfb "Up Err!",CR,LF,0
+00:0907 0D
+00:0908 0A
+00:0909 00
+00:090A 5570204F6B21    	   174: good:	dfb "Up Ok!",CR,LF,0
+00:0910 0D
+00:0911 0A
+00:0912 00
+00:0913 0D              	   175: msg:	dfb CR,LF,"X/CSUM <Esc> to q",CR,LF,0
+00:0914 0A
+00:0915 582F4353554D203C
+00:091D 4573633E20746F20
+00:0925 71
+00:0926 0D
+00:0927 0A
+00:0928 00
+                        	   176: 
+                        	   177: 
+
+
+Symbols by name:
+ACK                              E:0006
+BadCrc                           A:0876
+BegBlk                           A:083F
+CR                               E:000D
+CalcCrc                          A:086B
+Done                             A:089F
+EOT                              E:0004
+ESC                              E:001B
+ErrorOut                         A:08AE
+Flush                            A:08CA
+GetBlk                           A:0842
+GetBlk1                          A:0847
+GetBlk2                          A:084C
+GetByte                          A:08B8
+GetByteLoop                      A:08BE
+GoodBlk1                         A:085D
+GoodBlk2                         A:0865
+GoodCrc                          A:0880
+GotByte                          A:0832
+LF                               E:000A
+NAK                              E:0015
+SOH                              E:0001
+StartBlk                         A:0828
+StartX                           A:0817
+XModem                           A:0806
+blkno                            A:08FD
+err                              A:0900
+get_chr                          A:08D5
+good                             A:090A
+monitor_warm_start               E:046F
+msg                              A:0913
+ptr                              A:08FB
+put_chr                          A:08EF
+put_chr1                         A:08F0
+rbuff                            E:0C00
+rbuffp                           E:000C
+retry                            A:08FE
+retry2                           A:08FF
+sbuff                            E:1000
+write_string                     A:08DF
+
+Symbols by value:
+0001 SOH
+0004 EOT
+0006 ACK
+000A LF
+000C rbuffp
+000D CR
+0015 NAK
+001B ESC
+046F monitor_warm_start
+0806 XModem
+0817 StartX
+0828 StartBlk
+0832 GotByte
+083F BegBlk
+0842 GetBlk
+0847 GetBlk1
+084C GetBlk2
+085D GoodBlk1
+0865 GoodBlk2
+086B CalcCrc
+0876 BadCrc
+0880 GoodCrc
+089F Done
+08AE ErrorOut
+08B8 GetByte
+08BE GetByteLoop
+08CA Flush
+08D5 get_chr
+08DF write_string
+08EF put_chr
+08F0 put_chr1
+08FB ptr
+08FD blkno
+08FE retry
+08FF retry2
+0900 err
+090A good
+0913 msg
+0C00 rbuff
+1000 sbuff

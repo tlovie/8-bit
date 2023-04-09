@@ -1,0 +1,281 @@
+; Hangman game by Tom Lovie 2023-01-13
+; Z80 assembly language	
+monitor_warm_start:	equ	0450h
+
+	org 0800h 		; set origin
+	call hangman
+	jp monitor_warm_start
+
+hangman:
+	ld hl,crlf
+	call write_string	; write a blank line to start
+	ld hl,alphabet
+	call init_alpha		; initialize the alphabet
+	ld ix,gallows
+	call clr_guess		; reset the guess and gallows
+	ld a,(rand8+1)		; check if we aleady have a random seed
+	or a			; starts as zero
+	jr nz,noseed
+	ld a,r			; get r (refresh) register for use as random seed into a
+	ld (rand8+1),a		; store r into random seed (via a)
+noseed:	ld hl,wordlist		; put start of wordlist in hl
+	call get_rnd_word	; choose a random word (hl)
+	ld (word),hl		; store the address into word
+	ld ix,guess		; put the guess buffer into ix
+	call init_guess		; initialize the guess
+loop:	ld bc,(cnt) 		; put count in b (stored as c,b in mem)
+	ld ix,gallows		; put the gallows in ix
+	ld iy,guess		; put the start of the guess buffer in iy
+	ld hl,(word)		; put the start of the word in hl
+	call pop_guess		; update the gallows
+	ld hl,gallows		; put start of gallows in hl
+	call write_string	; print out the gallows
+	ld hl,guess		; put start of guess buffer in hl
+	call write_string	; print out guess buffer
+	ld hl,alphabet		; put start of alphabet in hl
+	call write_string	; print out alphabet string
+	ld hl,crlf		; put start of crlf in hl
+	call write_string	; print crlf
+	ld a,(max_guess)	; put max guesses into a
+	ld bc,(cnt)		; put max guesses into bc
+	sub b			; check for max guesses
+	jp z,lose_game		; on zero jump to lose game
+	ld a,(num_blank)	; load number of periods into a
+	and a			; test for zero
+	jp z,win_game		; on zero jump to win game
+	ld hl,prompt		; put start of prompt in hl
+	call write_string	; print prompt			
+	call get_char		; get a character from input
+	ld (char),a		; store char in mem
+	ld c,a			; put character to search for in c
+	ld hl,alphabet		; put start of alphabet in hl
+	call proc_alpha		; process the input char (zero flag set if char found)
+	jp nz,inv_ch		; if we did not find char then skip down
+	ld hl,(word)		; load the start word into hl
+	ld ix,guess		; load the guess buffer into ix
+	ld b,0			; b is changed to 1 if the letter was in the word
+	ld d,0			; d is the count of periods in the guess buffer
+	call proc_guess		; process the guess letter (still in c)
+	ld a,d			; number of periods in d register
+	ld (num_blank),a	; store the number of periods
+	ld a,1			; need to compare to b
+	sub b			; if zero then we had a match
+	jp z,inv_ch		; jump past the increment of the miss counter
+	ld bc,(cnt)		; load the miss counter from memory
+	inc b			; increment
+	ld (cnt),bc		; put the miss counter back into memory
+inv_ch:	ld a,"!"		; put ! in a
+	sub c			; check if char matches
+	jp z,exit		; exit if put in exclamation mark
+	ld hl,crlf              ; not exit, so put start of crlf in hl
+        call write_string       ; print crlf
+	jp loop			; goto main prog loop
+exit:	ret			; return control to OS
+lose_game:
+	ld hl,lose_prompt	; put start of lose message into hl
+	call write_string	; print the lose message
+	ret			; return control to OS
+win_game:
+	ld hl,win_prompt	; put start of win message into hl
+	call write_string	; print the win message
+	ret			; return control to OS
+
+;Subroutine to expose entire word (when you lose)
+;hl is selected word, ix is the guess buffer
+;destroys hl,iy,a
+expose_word:		ld a,(hl) 	; get the letter into a
+			and a		; check if zero (end of word)
+			ret z		; return if we are finished
+			ld (iy+0),a	; fill out the letter in the guess buffer
+			inc hl		; increment counters
+			inc iy
+			jp expose_word	; goto top
+			
+
+;Subroutine to process the guessed character, exposes the char if it exists
+;hl is the selected word, ix is the guess buffer, c is the character
+;destroys hl,ix,a,b
+proc_guess:		ld a,(hl)	; get the letter of the word into a
+			and a		; test for zero (end of word)
+			ret z		; return if we are at the end of word
+			sub c		; compare with guessed letter
+			jp nz,no_guess  ; if not match, then jump past exposing the letter
+			ld (ix+0),c	; if match then show letter in buffer
+			ld b,1		; show that we found a match
+no_guess:		ld e,(ix+0)	; get the guess buffer character
+			ld a,"."	; load . into a
+			sub e		; compare with period
+			jp nz, inc_cnt	; if not zero do not increment d
+			inc d		; increment d there is a period
+inc_cnt:		inc hl		; increment word counter
+			inc ix		; increment guess counter
+			jp proc_guess	; do until we reach a zero (above)
+
+;Subroutine to initialize the guess buffer based in the selected word.
+;hl is the selected word, ix is the guess buffer
+;destroys hl,ix,a,bc
+init_guess:		ld b,15			; 15 characters max
+			ld c,"."		; fill with periods
+init_guess_loop:	ld a,(hl)		; get the current character
+			and a			; test if zero
+			jp nz,fill_buf		; if not zero jump past
+			ld c," "		; if zero then change c to space
+fill_buf:		ld (ix+0),c		; put c into guess buffer
+			inc hl			; increment word buffer
+			inc ix			; increment guess buffer
+			djnz init_guess_loop	; go until b=0
+			ret
+
+;Subroutine to cross out a letter from the alphabet buffer
+;Address of alphabet buffer in HL, letter in C
+;destroys HL, B
+proc_alpha:		ld b,26			; 26 letter in alphabet
+proc_alpha_loop:	ld a,(hl)		; get the letter from the buffer
+			sub c 			; compare with letter in c
+			jp nz,proc_alpha_nf	; if not zero 
+			ld a," "		; it was found - change to space
+			ld (hl),a		; write space char to mem
+			ret			; we found it so done
+proc_alpha_nf:		inc hl			; move to next in buffer
+			djnz proc_alpha_loop	; dec b and start again
+			ret
+;
+;Get one ASCII character from the serial port.
+;Returns with char in A reg. No error checking.
+get_char:               in      a,(3)                   ;get status
+                        and     002h                    ;check RxRDY bit
+                        jp      z,get_char              ;not ready, loop
+                        in      a,(2)                   ;get char
+                        ret
+
+;Subroutine to get a random number x[i+1] = 5 * x[i] + 1 mod 256
+;destroys A,B - self modifying code
+rand8:			ld	a,0 		; 0 is the random seed during compile
+			ld	b,a		; copy a for later
+			add	a,a		; double a
+			add	a,a		; double a again (times 4)
+			add 	a,b		; add back original a (times 5)
+			inc	a		; add one
+			ld	(rand8+1),a	; store new random seed
+			ret
+
+
+;Subroutine to write a zero-terminated string to serial output
+;Pass address of string in HL register
+;No error checking
+write_string:           in      a,(3)                   ;read status
+                        and     001h                    ;check TxRDY bit
+                        jp      z,write_string          ;loop if not set
+                        ld      a,(hl)                  ;get char from string
+                        and     a                       ;check if 0
+                        ret     z                       ;yes, finished
+                        out     (2),a                   ;no, write char to output
+                        inc     hl                      ;next char in string
+                        jp      write_string            ;start over
+
+;Subroutine to get a random number (n), and find the location of the (n)th word in the list
+;needs start of word list in hl, returns the address of the start of a word in hl
+;destroys A,B,HL
+get_rnd_word:		call rand8	; random 8 bit int in A
+			srl	a	; divide by 2
+			srl	a	; divide by 4	
+			srl	a	; divide by 8
+			ld 	b,a	; store in B
+			inc	b	; the start of the word list begins with a zero
+grw_mvnext:		ld	a,(hl)	; load the char into a
+			and	a		; check if zero
+			jp	nz,grw_nz	; if non-zero we are not on the start of word
+			dec 	b		; if zero decrement b and test if zero
+			jp	z,grw_exit	; if zero, then we are at (n)th word
+grw_nz:			inc	hl		; move to next character
+			jp 	grw_mvnext	; continue to loop
+grw_exit:		inc	hl		; move one more char to get off 0 terminator
+			ret
+
+;Subroutine to populate hangman with number of incorrect guesses
+;Put number of guesses in B, hangman location IX, destroys A, B
+pop_guess:	inc	b	; hack so next statement will set the flags
+		dec	b	; back at whatever b was, but flags are set
+		ret	z	; return if zero
+		ld	a,"O"	; head character
+		ld	(ix+24),a	; write to head location in gallows
+		dec	b	; wrote a character, so decrease b
+		ret	z	; return if zero
+		ld	a,"|"	; body character
+		ld	(ix+42),a	; write to body location in gallows
+		ld	a,"+"	; other body character
+		ld	(ix+33),a	; write to other body location
+		ld	(ix+52),a	; write to other body location
+		dec	b	; wrote a character, so decrease b
+		ret	z	; return if zero
+		ld	a,"/"	; left arm
+		ld	(ix+41),a	; left arm location
+		dec	b	; wrote a character, so decrease b
+		ret	z	; return if zero
+		ld	a,"\"	; right arm
+		ld	(ix+43),a	; right arm location
+		dec	b	; wrote a character so decrease b
+		ret	z	; return if zero
+		ld	a,"/"	; left leg
+		ld	(ix+60),a	; left leg location
+		dec	b	; wrote a character so decrease b
+		ret	z	; return if zero
+		ld	a,"\"	; right leg
+		ld	(ix+62),a	; right leg location
+		call	expose_word	; if get here, then you have lost, and word shown
+		ret	; go back to calling location
+
+;Subroutine to reset hangman to zero guesses
+;Location in IX, destroys A
+clr_guess:	ld	a," "		; space character is eraser
+		ld	(ix+24),a	; all hangman locations below
+		ld	(ix+42),a
+		ld	(ix+33),a
+		ld	(ix+52),a
+		ld	(ix+41),a
+		ld	(ix+43),a
+		ld	(ix+60),a
+		ld	(ix+62),a
+		ld (num_blank),a	; reset the number of unknown letters
+		xor	a		; reset the number of guesses
+		ld (cnt),a
+		ld (cnt+1),a
+		ret
+
+;Subroutine to initialize alphabet
+;destroys HL, A, B
+init_alpha: 		ld b,26		; 26 letters in string
+			ld a,"A"	; start at letter A
+init_alpha_loop:	ld (hl),a	
+			inc a
+			inc hl
+			djnz init_alpha_loop
+			ret
+
+; variables and constants are stored in memory here
+word:		dfw wordlist
+cnt:		dfw 0			; number of incorrect guesses
+char:		dfw 0			; input character
+max_guess:	dfb 6			; defined max guesses
+num_blank:	dfb 1			; used to count the number of unknown letters
+guess:		dfb "               ",0 ; buffer to build the guessed word
+prompt:		dfb "Guess any letter (upper case) [! to exit] ->",0
+lose_prompt:	dfb "You have ran out of guesses and lost, better luck next time.",0dh,0ah,0
+win_prompt:	dfb "Congratulations - you have won the game.... this time.",0dh,0ah,0
+crlf:		dfb 0dh,0ah,0
+alphabet:	dfb "ABCDEFGHIJKLMNOPQRSTUVWXYZ",0
+gallows:	dfb "+-----+",0dh,0ah  ;9
+		dfb "|     |",0dh,0ah  ;18
+		dfb "|      ",0dh,0ah  ;27
+		dfb "|      ",0dh,0ah  ;36
+		dfb "|       ",0dh,0ah ;46
+		dfb "|      ",0dh,0ah  ;55
+		dfb "|       ",0dh,0ah ;65  first 0 of wordlist terminates the gallows
+wordlist:	dfb 0,"BEEKEEPER",0,"ROGUE",0,"ATTACK",0,"PYRAMID"
+		dfb 0,"PRISM",0,"SECTOR",0,"TRIANGLE",0,"GREEN"
+		dfb 0,"ROUND",0,"AIRPLANE",0,"INTERVAL",0,"POINT"
+		dfb 0,"ECLIPSE",0,"ATLAS",0,"MYSTIFY",0,"ANIMAL"
+		dfb 0,"ERASER",0,"COMPUTER",0,"SWIMMING",0,"CHEMISTRY"
+		dfb 0,"ENVELOPE",0,"ZENITH",0,"VERMILLION",0,"QUIXOTIC"
+		dfb 0,"PARADIGM",0,"LUCID",0,"FORTITUDE",0,"DUBIOUS"
+		dfb 0,"VOLLEYBALL",0,"RETAIN",0,"KEYBOARD",0,"OCEAN",0

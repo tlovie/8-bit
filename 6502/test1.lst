@@ -1,0 +1,777 @@
+Sections:
+00: "seg1000" (1000-1661)
+
+
+Source: "test1.s"
+                        	     1: 
+                        	     2: prtb = $c000
+                        	     3: prta = $c001
+                        	     4: ddrb = $c002
+                        	     5: ddra = $c003
+                        	     6: E =  %01000000
+                        	     7: RS = %00100000
+                        	     8: RW = %00010000
+                        	     9: 
+                        	    10:     org $1000
+                        	    11: 
+                        	    12: reset:
+00:1000 A9FF            	    13:     lda #%11111111 ; set all pins to output
+00:1002 8D02C0          	    14:     sta ddrb
+                        	    15: 
+00:1005 A902            	    16:     lda #%00000010 ; set 4 bit operation
+00:1007 8D00C0          	    17:     sta prtb
+00:100A 0940            	    18:     ora #(E)
+00:100C 8D00C0          	    19:     sta prtb
+00:100F 29BF            	    20:     and #(~E)
+00:1011 8D00C0          	    21:     sta prtb
+                        	    22: 
+00:1014 A9F0            	    23:     lda #%11110000 ; set db7 pin to input
+00:1016 8D02C0          	    24:     sta ddrb
+00:1019 A910            	    25:     lda #RW ; read busy flag
+00:101B 8D00C0          	    26:     sta prtb
+00:101E A950            	    27:     lda #(RW | E)
+00:1020 8D00C0          	    28:     sta prtb
+00:1023 AD00C0          	    29:     lda prtb	
+00:1026 2908            	    30:     and #%00001000 ; check if zero
+00:1028 D0EF            	    31:     bne *-15
+00:102A A910            	    32:     lda #RW
+00:102C 8D00C0          	    33:     sta prtb
+00:102F A9FF            	    34:     lda #%11111111 ; return to all output
+00:1031 8D02C0          	    35:     sta ddrb
+                        	    36: 
+00:1034 A902            	    37:     lda #%00000010 ; set 4 bit operation with 2 line display
+00:1036 8D00C0          	    38:     sta prtb       ; 00101000
+00:1039 0940            	    39:     ora #(E)
+00:103B 8D00C0          	    40:     sta prtb
+00:103E 29BF            	    41:     and #(~E)
+00:1040 8D00C0          	    42:     sta prtb
+                        	    43: 
+00:1043 A9F0            	    44:     lda #%11110000 ; set db7 pin to input
+00:1045 8D02C0          	    45:     sta ddrb
+00:1048 A910            	    46:     lda #RW ; read busy flag
+00:104A 8D00C0          	    47:     sta prtb
+00:104D A950            	    48:     lda #(RW | E)
+00:104F 8D00C0          	    49:     sta prtb
+00:1052 AD00C0          	    50:     lda prtb	
+00:1055 2908            	    51:     and #%00001000 ; check if zero
+00:1057 D0EF            	    52:     bne *-15
+00:1059 A910            	    53:     lda #RW
+00:105B 8D00C0          	    54:     sta prtb
+00:105E A9FF            	    55:     lda #%11111111 ; return to all output
+00:1060 8D02C0          	    56:     sta ddrb
+                        	    57: 
+00:1063 A908            	    58:     lda #%00001000 ; continued above instruction
+00:1065 8D00C0          	    59:     sta prtb ;8421  
+00:1068 0940            	    60:     ora #(E)
+00:106A 8D00C0          	    61:     sta prtb
+00:106D 29BF            	    62:     and #(~E)
+00:106F 8D00C0          	    63:     sta prtb
+                        	    64: 
+00:1072 A9F0            	    65:     lda #%11110000 ; set db7 pin to input
+00:1074 8D02C0          	    66:     sta ddrb
+00:1077 A910            	    67:     lda #RW ; read busy flag
+00:1079 8D00C0          	    68:     sta prtb
+00:107C A950            	    69:     lda #(RW | E)
+00:107E 8D00C0          	    70:     sta prtb
+00:1081 AD00C0          	    71:     lda prtb	
+00:1084 2908            	    72:     and #%00001000 ; check if zero
+00:1086 D0EF            	    73:     bne *-15
+00:1088 A910            	    74:     lda #RW
+00:108A 8D00C0          	    75:     sta prtb
+00:108D A9FF            	    76:     lda #%11111111 ; return to all output
+00:108F 8D02C0          	    77:     sta ddrb
+                        	    78: 
+00:1092 A900            	    79:     lda #%00000000 ; clear screen
+00:1094 8D00C0          	    80:     sta prtb ;8421  
+00:1097 0940            	    81:     ora #(E)
+00:1099 8D00C0          	    82:     sta prtb
+00:109C 29BF            	    83:     and #(~E)
+00:109E 8D00C0          	    84:     sta prtb
+                        	    85: 
+00:10A1 A9F0            	    86:     lda #%11110000 ; set db7 pin to input
+00:10A3 8D02C0          	    87:     sta ddrb
+00:10A6 A910            	    88:     lda #RW ; read busy flag
+00:10A8 8D00C0          	    89:     sta prtb
+00:10AB A950            	    90:     lda #(RW | E)
+00:10AD 8D00C0          	    91:     sta prtb
+00:10B0 AD00C0          	    92:     lda prtb	
+00:10B3 2908            	    93:     and #%00001000 ; check if zero
+00:10B5 D0EF            	    94:     bne *-15
+00:10B7 A910            	    95:     lda #RW
+00:10B9 8D00C0          	    96:     sta prtb
+00:10BC A9FF            	    97:     lda #%11111111 ; return to all output
+00:10BE 8D02C0          	    98:     sta ddrb
+                        	    99: 
+00:10C1 A901            	   100:     lda #%00000001 ; 
+00:10C3 8D00C0          	   101:     sta prtb ;8421  
+00:10C6 0940            	   102:     ora #(E)
+00:10C8 8D00C0          	   103:     sta prtb
+00:10CB 29BF            	   104:     and #(~E)
+00:10CD 8D00C0          	   105:     sta prtb
+                        	   106:     
+00:10D0 A9F0            	   107:     lda #%11110000 ; set db7 pin to input
+00:10D2 8D02C0          	   108:     sta ddrb
+00:10D5 A910            	   109:     lda #RW ; read busy flag
+00:10D7 8D00C0          	   110:     sta prtb
+00:10DA A950            	   111:     lda #(RW | E)
+00:10DC 8D00C0          	   112:     sta prtb
+00:10DF AD00C0          	   113:     lda prtb	
+00:10E2 2908            	   114:     and #%00001000 ; check if zero
+00:10E4 D0EF            	   115:     bne *-15
+00:10E6 A910            	   116:     lda #RW
+00:10E8 8D00C0          	   117:     sta prtb
+00:10EB A9FF            	   118:     lda #%11111111 ; return to all output
+00:10ED 8D02C0          	   119:     sta ddrb
+                        	   120: 
+00:10F0 A0FF            	   121:     ldy #$ff
+00:10F2 A2FF            	   122: k1: ldx #$ff
+00:10F4 EA              	   123: k2: nop
+00:10F5 EA              	   124:     nop
+00:10F6 EA              	   125:     nop
+00:10F7 EA              	   126:     nop
+00:10F8 CA              	   127:     dex
+00:10F9 D0F9            	   128:     bne k2
+00:10FB 88              	   129:     dey
+00:10FC D0F4            	   130:     bne k1
+                        	   131:  
+                        	   132: 
+00:10FE A900            	   133:     lda #%00000000 ; turn on display and cursor
+00:1100 8D00C0          	   134:     sta prtb ;8421  
+00:1103 0940            	   135:     ora #(E)
+00:1105 8D00C0          	   136:     sta prtb
+00:1108 29BF            	   137:     and #(~E)
+00:110A 8D00C0          	   138:     sta prtb
+                        	   139: 
+00:110D A9F0            	   140:     lda #%11110000 ; set db7 pin to input
+00:110F 8D02C0          	   141:     sta ddrb
+00:1112 A910            	   142:     lda #RW ; read busy flag
+00:1114 8D00C0          	   143:     sta prtb
+00:1117 A950            	   144:     lda #(RW | E)
+00:1119 8D00C0          	   145:     sta prtb
+00:111C AD00C0          	   146:     lda prtb	
+00:111F 2908            	   147:     and #%00001000 ; check if zero
+00:1121 D0EF            	   148:     bne *-15
+00:1123 A910            	   149:     lda #RW
+00:1125 8D00C0          	   150:     sta prtb
+00:1128 A9FF            	   151:     lda #%11111111 ; return to all output
+00:112A 8D02C0          	   152:     sta ddrb
+                        	   153: 
+00:112D A90E            	   154:     lda #%00001110 ; turn on display and cursor
+00:112F 8D00C0          	   155:     sta prtb ;8421  
+00:1132 0940            	   156:     ora #(E)
+00:1134 8D00C0          	   157:     sta prtb
+00:1137 29BF            	   158:     and #(~E)
+00:1139 8D00C0          	   159:     sta prtb
+                        	   160: 
+00:113C A9F0            	   161:     lda #%11110000 ; set db7 pin to input
+00:113E 8D02C0          	   162:     sta ddrb
+00:1141 A910            	   163:     lda #RW ; read busy flag
+00:1143 8D00C0          	   164:     sta prtb
+00:1146 A950            	   165:     lda #(RW | E)
+00:1148 8D00C0          	   166:     sta prtb
+00:114B AD00C0          	   167:     lda prtb	
+00:114E 2908            	   168:     and #%00001000 ; check if zero
+00:1150 D0EF            	   169:     bne *-15
+00:1152 A910            	   170:     lda #RW
+00:1154 8D00C0          	   171:     sta prtb
+00:1157 A9FF            	   172:     lda #%11111111 ; return to all output
+00:1159 8D02C0          	   173:     sta ddrb
+                        	   174: 
+00:115C A900            	   175:     lda #%00000000 ; set increment to the address and cursor shift right
+00:115E 8D00C0          	   176:     sta prtb ;8421  
+00:1161 0940            	   177:     ora #(E)
+00:1163 8D00C0          	   178:     sta prtb
+00:1166 29BF            	   179:     and #(~E)
+00:1168 8D00C0          	   180:     sta prtb
+                        	   181: 
+00:116B A9F0            	   182:     lda #%11110000 ; set db7 pin to input
+00:116D 8D02C0          	   183:     sta ddrb
+00:1170 A910            	   184:     lda #RW ; read busy flag
+00:1172 8D00C0          	   185:     sta prtb
+00:1175 A950            	   186:     lda #(RW | E)
+00:1177 8D00C0          	   187:     sta prtb
+00:117A AD00C0          	   188:     lda prtb	
+00:117D 2908            	   189:     and #%00001000 ; check if zero
+00:117F D0EF            	   190:     bne *-15
+00:1181 A910            	   191:     lda #RW
+00:1183 8D00C0          	   192:     sta prtb
+00:1186 A9FF            	   193:     lda #%11111111 ; return to all output
+00:1188 8D02C0          	   194:     sta ddrb
+                        	   195: 
+00:118B A906            	   196:     lda #%00000110 ; 
+00:118D 8D00C0          	   197:     sta prtb ;8421  
+00:1190 0940            	   198:     ora #(E)
+00:1192 8D00C0          	   199:     sta prtb
+00:1195 29BF            	   200:     and #(~E)
+00:1197 8D00C0          	   201:     sta prtb
+                        	   202:     
+00:119A A9F0            	   203:     lda #%11110000 ; set db7 pin to input
+00:119C 8D02C0          	   204:     sta ddrb
+00:119F A910            	   205:     lda #RW ; read busy flag
+00:11A1 8D00C0          	   206:     sta prtb
+00:11A4 A950            	   207:     lda #(RW | E)
+00:11A6 8D00C0          	   208:     sta prtb
+00:11A9 AD00C0          	   209:     lda prtb	
+00:11AC 2908            	   210:     and #%00001000 ; check if zero
+00:11AE D0EF            	   211:     bne *-15
+00:11B0 A910            	   212:     lda #RW
+00:11B2 8D00C0          	   213:     sta prtb
+00:11B5 A9FF            	   214:     lda #%11111111 ; return to all output
+00:11B7 8D02C0          	   215:     sta ddrb
+                        	   216: 
+00:11BA A924            	   217:     lda #%00100100 ; H 48
+00:11BC 8D00C0          	   218:     sta prtb ;8421  
+00:11BF 0940            	   219:     ora #(E)
+00:11C1 8D00C0          	   220:     sta prtb
+00:11C4 29BF            	   221:     and #(~E)
+00:11C6 8D00C0          	   222:     sta prtb
+                        	   223: 
+00:11C9 A9F0            	   224:     lda #%11110000 ; set db7 pin to input
+00:11CB 8D02C0          	   225:     sta ddrb
+00:11CE A910            	   226:     lda #RW ; read busy flag
+00:11D0 8D00C0          	   227:     sta prtb
+00:11D3 A950            	   228:     lda #(RW | E)
+00:11D5 8D00C0          	   229:     sta prtb
+00:11D8 AD00C0          	   230:     lda prtb	
+00:11DB 2908            	   231:     and #%00001000 ; check if zero
+00:11DD D0EF            	   232:     bne *-15
+00:11DF A910            	   233:     lda #RW
+00:11E1 8D00C0          	   234:     sta prtb
+00:11E4 A9FF            	   235:     lda #%11111111 ; return to all output
+00:11E6 8D02C0          	   236:     sta ddrb
+                        	   237: 
+00:11E9 A928            	   238:     lda #%00101000 ; 
+00:11EB 8D00C0          	   239:     sta prtb ;8421  
+00:11EE 0940            	   240:     ora #(E)
+00:11F0 8D00C0          	   241:     sta prtb
+00:11F3 29BF            	   242:     and #(~E)
+00:11F5 8D00C0          	   243:     sta prtb
+                        	   244: 
+00:11F8 A9F0            	   245:     lda #%11110000 ; set db7 pin to input
+00:11FA 8D02C0          	   246:     sta ddrb
+00:11FD A910            	   247:     lda #RW ; read busy flag
+00:11FF 8D00C0          	   248:     sta prtb
+00:1202 A950            	   249:     lda #(RW | E)
+00:1204 8D00C0          	   250:     sta prtb
+00:1207 AD00C0          	   251:     lda prtb	
+00:120A 2908            	   252:     and #%00001000 ; check if zero
+00:120C D0EF            	   253:     bne *-15
+00:120E A910            	   254:     lda #RW
+00:1210 8D00C0          	   255:     sta prtb
+00:1213 A9FF            	   256:     lda #%11111111 ; return to all output
+00:1215 8D02C0          	   257:     sta ddrb
+                        	   258: 
+00:1218 A926            	   259:     lda #%00100110 ; e 65
+00:121A 8D00C0          	   260:     sta prtb ;8421  
+00:121D 0940            	   261:     ora #(E)
+00:121F 8D00C0          	   262:     sta prtb
+00:1222 29BF            	   263:     and #(~E)
+00:1224 8D00C0          	   264:     sta prtb
+                        	   265: 
+00:1227 A9F0            	   266:     lda #%11110000 ; set db7 pin to input
+00:1229 8D02C0          	   267:     sta ddrb
+00:122C A910            	   268:     lda #RW ; read busy flag
+00:122E 8D00C0          	   269:     sta prtb
+00:1231 A950            	   270:     lda #(RW | E)
+00:1233 8D00C0          	   271:     sta prtb
+00:1236 AD00C0          	   272:     lda prtb	
+00:1239 2908            	   273:     and #%00001000 ; check if zero
+00:123B D0EF            	   274:     bne *-15
+00:123D A910            	   275:     lda #RW
+00:123F 8D00C0          	   276:     sta prtb
+00:1242 A9FF            	   277:     lda #%11111111 ; return to all output
+00:1244 8D02C0          	   278:     sta ddrb
+                        	   279: 
+00:1247 A925            	   280:     lda #%00100101 ; 
+00:1249 8D00C0          	   281:     sta prtb ;8421  
+00:124C 0940            	   282:     ora #(E)
+00:124E 8D00C0          	   283:     sta prtb
+00:1251 29BF            	   284:     and #(~E)
+00:1253 8D00C0          	   285:     sta prtb
+                        	   286: 
+00:1256 A9F0            	   287:     lda #%11110000 ; set db7 pin to input
+00:1258 8D02C0          	   288:     sta ddrb
+00:125B A910            	   289:     lda #RW ; read busy flag
+00:125D 8D00C0          	   290:     sta prtb
+00:1260 A950            	   291:     lda #(RW | E)
+00:1262 8D00C0          	   292:     sta prtb
+00:1265 AD00C0          	   293:     lda prtb	
+00:1268 2908            	   294:     and #%00001000 ; check if zero
+00:126A D0EF            	   295:     bne *-15
+00:126C A910            	   296:     lda #RW
+00:126E 8D00C0          	   297:     sta prtb
+00:1271 A9FF            	   298:     lda #%11111111 ; return to all output
+00:1273 8D02C0          	   299:     sta ddrb
+                        	   300: 
+00:1276 A926            	   301:     lda #%00100110 ; l 6c
+00:1278 8D00C0          	   302:     sta prtb ;8421  
+00:127B 0940            	   303:     ora #(E)
+00:127D 8D00C0          	   304:     sta prtb
+00:1280 29BF            	   305:     and #(~E)
+00:1282 8D00C0          	   306:     sta prtb
+                        	   307: 
+00:1285 A9F0            	   308:     lda #%11110000 ; set db7 pin to input
+00:1287 8D02C0          	   309:     sta ddrb
+00:128A A910            	   310:     lda #RW ; read busy flag
+00:128C 8D00C0          	   311:     sta prtb
+00:128F A950            	   312:     lda #(RW | E)
+00:1291 8D00C0          	   313:     sta prtb
+00:1294 AD00C0          	   314:     lda prtb	
+00:1297 2908            	   315:     and #%00001000 ; check if zero
+00:1299 D0EF            	   316:     bne *-15
+00:129B A910            	   317:     lda #RW
+00:129D 8D00C0          	   318:     sta prtb
+00:12A0 A9FF            	   319:     lda #%11111111 ; return to all output
+00:12A2 8D02C0          	   320:     sta ddrb
+                        	   321: 
+00:12A5 A92C            	   322:     lda #%00101100 ; 
+00:12A7 8D00C0          	   323:     sta prtb ;8421  
+00:12AA 0940            	   324:     ora #(E)
+00:12AC 8D00C0          	   325:     sta prtb
+00:12AF 29BF            	   326:     and #(~E)
+00:12B1 8D00C0          	   327:     sta prtb
+                        	   328: 
+00:12B4 A9F0            	   329:     lda #%11110000 ; set db7 pin to input
+00:12B6 8D02C0          	   330:     sta ddrb
+00:12B9 A910            	   331:     lda #RW ; read busy flag
+00:12BB 8D00C0          	   332:     sta prtb
+00:12BE A950            	   333:     lda #(RW | E)
+00:12C0 8D00C0          	   334:     sta prtb
+00:12C3 AD00C0          	   335:     lda prtb	
+00:12C6 2908            	   336:     and #%00001000 ; check if zero
+00:12C8 D0EF            	   337:     bne *-15
+00:12CA A910            	   338:     lda #RW
+00:12CC 8D00C0          	   339:     sta prtb
+00:12CF A9FF            	   340:     lda #%11111111 ; return to all output
+00:12D1 8D02C0          	   341:     sta ddrb
+                        	   342: 
+00:12D4 A926            	   343:     lda #%00100110 ; l 6c
+00:12D6 8D00C0          	   344:     sta prtb ;8421  
+00:12D9 0940            	   345:     ora #(E)
+00:12DB 8D00C0          	   346:     sta prtb
+00:12DE 29BF            	   347:     and #(~E)
+00:12E0 8D00C0          	   348:     sta prtb
+                        	   349: 
+00:12E3 A9F0            	   350:     lda #%11110000 ; set db7 pin to input
+00:12E5 8D02C0          	   351:     sta ddrb
+00:12E8 A910            	   352:     lda #RW ; read busy flag
+00:12EA 8D00C0          	   353:     sta prtb
+00:12ED A950            	   354:     lda #(RW | E)
+00:12EF 8D00C0          	   355:     sta prtb
+00:12F2 AD00C0          	   356:     lda prtb	
+00:12F5 2908            	   357:     and #%00001000 ; check if zero
+00:12F7 D0EF            	   358:     bne *-15
+00:12F9 A910            	   359:     lda #RW
+00:12FB 8D00C0          	   360:     sta prtb
+00:12FE A9FF            	   361:     lda #%11111111 ; return to all output
+00:1300 8D02C0          	   362:     sta ddrb
+                        	   363: 
+00:1303 A92C            	   364:     lda #%00101100 ; 
+00:1305 8D00C0          	   365:     sta prtb ;8421  
+00:1308 0940            	   366:     ora #(E)
+00:130A 8D00C0          	   367:     sta prtb
+00:130D 29BF            	   368:     and #(~E)
+00:130F 8D00C0          	   369:     sta prtb
+                        	   370:     
+00:1312 A9F0            	   371:     lda #%11110000 ; set db7 pin to input
+00:1314 8D02C0          	   372:     sta ddrb
+00:1317 A910            	   373:     lda #RW ; read busy flag
+00:1319 8D00C0          	   374:     sta prtb
+00:131C A950            	   375:     lda #(RW | E)
+00:131E 8D00C0          	   376:     sta prtb
+00:1321 AD00C0          	   377:     lda prtb	
+00:1324 2908            	   378:     and #%00001000 ; check if zero
+00:1326 D0EF            	   379:     bne *-15
+00:1328 A910            	   380:     lda #RW
+00:132A 8D00C0          	   381:     sta prtb
+00:132D A9FF            	   382:     lda #%11111111 ; return to all output
+00:132F 8D02C0          	   383:     sta ddrb
+                        	   384: 
+00:1332 A926            	   385:     lda #%00100110 ; o 6f
+00:1334 8D00C0          	   386:     sta prtb ;8421  
+00:1337 0940            	   387:     ora #(E)
+00:1339 8D00C0          	   388:     sta prtb
+00:133C 29BF            	   389:     and #(~E)
+00:133E 8D00C0          	   390:     sta prtb
+                        	   391: 
+00:1341 A9F0            	   392:     lda #%11110000 ; set db7 pin to input
+00:1343 8D02C0          	   393:     sta ddrb
+00:1346 A910            	   394:     lda #RW ; read busy flag
+00:1348 8D00C0          	   395:     sta prtb
+00:134B A950            	   396:     lda #(RW | E)
+00:134D 8D00C0          	   397:     sta prtb
+00:1350 AD00C0          	   398:     lda prtb	
+00:1353 2908            	   399:     and #%00001000 ; check if zero
+00:1355 D0EF            	   400:     bne *-15
+00:1357 A910            	   401:     lda #RW
+00:1359 8D00C0          	   402:     sta prtb
+00:135C A9FF            	   403:     lda #%11111111 ; return to all output
+00:135E 8D02C0          	   404:     sta ddrb
+                        	   405: 
+00:1361 A92F            	   406:     lda #%00101111 ; 
+00:1363 8D00C0          	   407:     sta prtb ;8421  
+00:1366 0940            	   408:     ora #(E)
+00:1368 8D00C0          	   409:     sta prtb
+00:136B 29BF            	   410:     and #(~E)
+00:136D 8D00C0          	   411:     sta prtb
+                        	   412: 
+00:1370 A9F0            	   413:     lda #%11110000 ; set db7 pin to input
+00:1372 8D02C0          	   414:     sta ddrb
+00:1375 A910            	   415:     lda #RW ; read busy flag
+00:1377 8D00C0          	   416:     sta prtb
+00:137A A950            	   417:     lda #(RW | E)
+00:137C 8D00C0          	   418:     sta prtb
+00:137F AD00C0          	   419:     lda prtb	
+00:1382 2908            	   420:     and #%00001000 ; check if zero
+00:1384 D0EF            	   421:     bne *-15
+00:1386 A910            	   422:     lda #RW
+00:1388 8D00C0          	   423:     sta prtb
+00:138B A9FF            	   424:     lda #%11111111 ; return to all output
+00:138D 8D02C0          	   425:     sta ddrb
+                        	   426: 
+00:1390 A922            	   427:     lda #%00100010 ; , 2c
+00:1392 8D00C0          	   428:     sta prtb ;8421  
+00:1395 0940            	   429:     ora #(E)
+00:1397 8D00C0          	   430:     sta prtb
+00:139A 29BF            	   431:     and #(~E)
+00:139C 8D00C0          	   432:     sta prtb
+                        	   433: 
+00:139F A9F0            	   434:     lda #%11110000 ; set db7 pin to input
+00:13A1 8D02C0          	   435:     sta ddrb
+00:13A4 A910            	   436:     lda #RW ; read busy flag
+00:13A6 8D00C0          	   437:     sta prtb
+00:13A9 A950            	   438:     lda #(RW | E)
+00:13AB 8D00C0          	   439:     sta prtb
+00:13AE AD00C0          	   440:     lda prtb	
+00:13B1 2908            	   441:     and #%00001000 ; check if zero
+00:13B3 D0EF            	   442:     bne *-15
+00:13B5 A910            	   443:     lda #RW
+00:13B7 8D00C0          	   444:     sta prtb
+00:13BA A9FF            	   445:     lda #%11111111 ; return to all output
+00:13BC 8D02C0          	   446:     sta ddrb
+                        	   447: 
+00:13BF A92C            	   448:     lda #%00101100 ; 
+00:13C1 8D00C0          	   449:     sta prtb ;8421  
+00:13C4 0940            	   450:     ora #(E)
+00:13C6 8D00C0          	   451:     sta prtb
+00:13C9 29BF            	   452:     and #(~E)
+00:13CB 8D00C0          	   453:     sta prtb
+                        	   454: 
+00:13CE A9F0            	   455:     lda #%11110000 ; set db7 pin to input
+00:13D0 8D02C0          	   456:     sta ddrb
+00:13D3 A910            	   457:     lda #RW ; read busy flag
+00:13D5 8D00C0          	   458:     sta prtb
+00:13D8 A950            	   459:     lda #(RW | E)
+00:13DA 8D00C0          	   460:     sta prtb
+00:13DD AD00C0          	   461:     lda prtb	
+00:13E0 2908            	   462:     and #%00001000 ; check if zero
+00:13E2 D0EF            	   463:     bne *-15
+00:13E4 A910            	   464:     lda #RW
+00:13E6 8D00C0          	   465:     sta prtb
+00:13E9 A9FF            	   466:     lda #%11111111 ; return to all output
+00:13EB 8D02C0          	   467:     sta ddrb
+                        	   468: 
+00:13EE A922            	   469:     lda #%00100010 ; " " 20
+00:13F0 8D00C0          	   470:     sta prtb ;8421  
+00:13F3 0940            	   471:     ora #(E)
+00:13F5 8D00C0          	   472:     sta prtb
+00:13F8 29BF            	   473:     and #(~E)
+00:13FA 8D00C0          	   474:     sta prtb
+                        	   475: 
+00:13FD A9F0            	   476:     lda #%11110000 ; set db7 pin to input
+00:13FF 8D02C0          	   477:     sta ddrb
+00:1402 A910            	   478:     lda #RW ; read busy flag
+00:1404 8D00C0          	   479:     sta prtb
+00:1407 A950            	   480:     lda #(RW | E)
+00:1409 8D00C0          	   481:     sta prtb
+00:140C AD00C0          	   482:     lda prtb	
+00:140F 2908            	   483:     and #%00001000 ; check if zero
+00:1411 D0EF            	   484:     bne *-15
+00:1413 A910            	   485:     lda #RW
+00:1415 8D00C0          	   486:     sta prtb
+00:1418 A9FF            	   487:     lda #%11111111 ; return to all output
+00:141A 8D02C0          	   488:     sta ddrb
+                        	   489: 
+00:141D A920            	   490:     lda #%00100000 ; 
+00:141F 8D00C0          	   491:     sta prtb ;8421  
+00:1422 0940            	   492:     ora #(E)
+00:1424 8D00C0          	   493:     sta prtb
+00:1427 29BF            	   494:     and #(~E)
+00:1429 8D00C0          	   495:     sta prtb
+                        	   496: 
+00:142C A9F0            	   497:     lda #%11110000 ; set db7 pin to input
+00:142E 8D02C0          	   498:     sta ddrb
+00:1431 A910            	   499:     lda #RW ; read busy flag
+00:1433 8D00C0          	   500:     sta prtb
+00:1436 A950            	   501:     lda #(RW | E)
+00:1438 8D00C0          	   502:     sta prtb
+00:143B AD00C0          	   503:     lda prtb	
+00:143E 2908            	   504:     and #%00001000 ; check if zero
+00:1440 D0EF            	   505:     bne *-15
+00:1442 A910            	   506:     lda #RW
+00:1444 8D00C0          	   507:     sta prtb
+00:1447 A9FF            	   508:     lda #%11111111 ; return to all output
+00:1449 8D02C0          	   509:     sta ddrb
+                        	   510: 
+00:144C A925            	   511:     lda #%00100101 ; W 57
+00:144E 8D00C0          	   512:     sta prtb ;8421  
+00:1451 0940            	   513:     ora #(E)
+00:1453 8D00C0          	   514:     sta prtb
+00:1456 29BF            	   515:     and #(~E)
+00:1458 8D00C0          	   516:     sta prtb
+                        	   517: 
+00:145B A9F0            	   518:     lda #%11110000 ; set db7 pin to input
+00:145D 8D02C0          	   519:     sta ddrb
+00:1460 A910            	   520:     lda #RW ; read busy flag
+00:1462 8D00C0          	   521:     sta prtb
+00:1465 A950            	   522:     lda #(RW | E)
+00:1467 8D00C0          	   523:     sta prtb
+00:146A AD00C0          	   524:     lda prtb	
+00:146D 2908            	   525:     and #%00001000 ; check if zero
+00:146F D0EF            	   526:     bne *-15
+00:1471 A910            	   527:     lda #RW
+00:1473 8D00C0          	   528:     sta prtb
+00:1476 A9FF            	   529:     lda #%11111111 ; return to all output
+00:1478 8D02C0          	   530:     sta ddrb
+                        	   531: 
+00:147B A927            	   532:     lda #%00100111 ; 
+00:147D 8D00C0          	   533:     sta prtb ;8421  
+00:1480 0940            	   534:     ora #(E)
+00:1482 8D00C0          	   535:     sta prtb
+00:1485 29BF            	   536:     and #(~E)
+00:1487 8D00C0          	   537:     sta prtb
+                        	   538: 
+00:148A A9F0            	   539:     lda #%11110000 ; set db7 pin to input
+00:148C 8D02C0          	   540:     sta ddrb
+00:148F A910            	   541:     lda #RW ; read busy flag
+00:1491 8D00C0          	   542:     sta prtb
+00:1494 A950            	   543:     lda #(RW | E)
+00:1496 8D00C0          	   544:     sta prtb
+00:1499 AD00C0          	   545:     lda prtb	
+00:149C 2908            	   546:     and #%00001000 ; check if zero
+00:149E D0EF            	   547:     bne *-15
+00:14A0 A910            	   548:     lda #RW
+00:14A2 8D00C0          	   549:     sta prtb
+00:14A5 A9FF            	   550:     lda #%11111111 ; return to all output
+00:14A7 8D02C0          	   551:     sta ddrb
+                        	   552: 
+00:14AA A926            	   553:     lda #%00100110 ; o 6f
+00:14AC 8D00C0          	   554:     sta prtb ;8421  
+00:14AF 0940            	   555:     ora #(E)
+00:14B1 8D00C0          	   556:     sta prtb
+00:14B4 29BF            	   557:     and #(~E)
+00:14B6 8D00C0          	   558:     sta prtb
+                        	   559: 
+00:14B9 A9F0            	   560:     lda #%11110000 ; set db7 pin to input
+00:14BB 8D02C0          	   561:     sta ddrb
+00:14BE A910            	   562:     lda #RW ; read busy flag
+00:14C0 8D00C0          	   563:     sta prtb
+00:14C3 A950            	   564:     lda #(RW | E)
+00:14C5 8D00C0          	   565:     sta prtb
+00:14C8 AD00C0          	   566:     lda prtb	
+00:14CB 2908            	   567:     and #%00001000 ; check if zero
+00:14CD D0EF            	   568:     bne *-15
+00:14CF A910            	   569:     lda #RW
+00:14D1 8D00C0          	   570:     sta prtb
+00:14D4 A9FF            	   571:     lda #%11111111 ; return to all output
+00:14D6 8D02C0          	   572:     sta ddrb
+                        	   573: 
+00:14D9 A92F            	   574:     lda #%00101111 ; 
+00:14DB 8D00C0          	   575:     sta prtb ;8421  
+00:14DE 0940            	   576:     ora #(E)
+00:14E0 8D00C0          	   577:     sta prtb
+00:14E3 29BF            	   578:     and #(~E)
+00:14E5 8D00C0          	   579:     sta prtb
+                        	   580: 
+00:14E8 A9F0            	   581:     lda #%11110000 ; set db7 pin to input
+00:14EA 8D02C0          	   582:     sta ddrb
+00:14ED A910            	   583:     lda #RW ; read busy flag
+00:14EF 8D00C0          	   584:     sta prtb
+00:14F2 A950            	   585:     lda #(RW | E)
+00:14F4 8D00C0          	   586:     sta prtb
+00:14F7 AD00C0          	   587:     lda prtb	
+00:14FA 2908            	   588:     and #%00001000 ; check if zero
+00:14FC D0EF            	   589:     bne *-15
+00:14FE A910            	   590:     lda #RW
+00:1500 8D00C0          	   591:     sta prtb
+00:1503 A9FF            	   592:     lda #%11111111 ; return to all output
+00:1505 8D02C0          	   593:     sta ddrb
+                        	   594: 
+00:1508 A927            	   595:     lda #%00100111 ; r 72
+00:150A 8D00C0          	   596:     sta prtb ;8421  
+00:150D 0940            	   597:     ora #(E)
+00:150F 8D00C0          	   598:     sta prtb
+00:1512 29BF            	   599:     and #(~E)
+00:1514 8D00C0          	   600:     sta prtb
+                        	   601: 
+00:1517 A9F0            	   602:     lda #%11110000 ; set db7 pin to input
+00:1519 8D02C0          	   603:     sta ddrb
+00:151C A910            	   604:     lda #RW ; read busy flag
+00:151E 8D00C0          	   605:     sta prtb
+00:1521 A950            	   606:     lda #(RW | E)
+00:1523 8D00C0          	   607:     sta prtb
+00:1526 AD00C0          	   608:     lda prtb	
+00:1529 2908            	   609:     and #%00001000 ; check if zero
+00:152B D0EF            	   610:     bne *-15
+00:152D A910            	   611:     lda #RW
+00:152F 8D00C0          	   612:     sta prtb
+00:1532 A9FF            	   613:     lda #%11111111 ; return to all output
+00:1534 8D02C0          	   614:     sta ddrb
+                        	   615: 
+00:1537 A922            	   616:     lda #%00100010 ; 
+00:1539 8D00C0          	   617:     sta prtb ;8421  
+00:153C 0940            	   618:     ora #(E)
+00:153E 8D00C0          	   619:     sta prtb
+00:1541 29BF            	   620:     and #(~E)
+00:1543 8D00C0          	   621:     sta prtb
+                        	   622: 
+00:1546 A9F0            	   623:     lda #%11110000 ; set db7 pin to input
+00:1548 8D02C0          	   624:     sta ddrb
+00:154B A910            	   625:     lda #RW ; read busy flag
+00:154D 8D00C0          	   626:     sta prtb
+00:1550 A950            	   627:     lda #(RW | E)
+00:1552 8D00C0          	   628:     sta prtb
+00:1555 AD00C0          	   629:     lda prtb	
+00:1558 2908            	   630:     and #%00001000 ; check if zero
+00:155A D0EF            	   631:     bne *-15
+00:155C A910            	   632:     lda #RW
+00:155E 8D00C0          	   633:     sta prtb
+00:1561 A9FF            	   634:     lda #%11111111 ; return to all output
+00:1563 8D02C0          	   635:     sta ddrb
+                        	   636: 
+00:1566 A926            	   637:     lda #%00100110 ; l 6c
+00:1568 8D00C0          	   638:     sta prtb ;8421  
+00:156B 0940            	   639:     ora #(E)
+00:156D 8D00C0          	   640:     sta prtb
+00:1570 29BF            	   641:     and #(~E)
+00:1572 8D00C0          	   642:     sta prtb
+                        	   643: 
+00:1575 A9F0            	   644:     lda #%11110000 ; set db7 pin to input
+00:1577 8D02C0          	   645:     sta ddrb
+00:157A A910            	   646:     lda #RW ; read busy flag
+00:157C 8D00C0          	   647:     sta prtb
+00:157F A950            	   648:     lda #(RW | E)
+00:1581 8D00C0          	   649:     sta prtb
+00:1584 AD00C0          	   650:     lda prtb	
+00:1587 2908            	   651:     and #%00001000 ; check if zero
+00:1589 D0EF            	   652:     bne *-15
+00:158B A910            	   653:     lda #RW
+00:158D 8D00C0          	   654:     sta prtb
+00:1590 A9FF            	   655:     lda #%11111111 ; return to all output
+00:1592 8D02C0          	   656:     sta ddrb
+                        	   657: 
+00:1595 A92C            	   658:     lda #%00101100 ; 
+00:1597 8D00C0          	   659:     sta prtb ;8421  
+00:159A 0940            	   660:     ora #(E)
+00:159C 8D00C0          	   661:     sta prtb
+00:159F 29BF            	   662:     and #(~E)
+00:15A1 8D00C0          	   663:     sta prtb
+                        	   664:     
+00:15A4 A9F0            	   665:     lda #%11110000 ; set db7 pin to input
+00:15A6 8D02C0          	   666:     sta ddrb
+00:15A9 A910            	   667:     lda #RW ; read busy flag
+00:15AB 8D00C0          	   668:     sta prtb
+00:15AE A950            	   669:     lda #(RW | E)
+00:15B0 8D00C0          	   670:     sta prtb
+00:15B3 AD00C0          	   671:     lda prtb	
+00:15B6 2908            	   672:     and #%00001000 ; check if zero
+00:15B8 D0EF            	   673:     bne *-15
+00:15BA A910            	   674:     lda #RW
+00:15BC 8D00C0          	   675:     sta prtb
+00:15BF A9FF            	   676:     lda #%11111111 ; return to all output
+00:15C1 8D02C0          	   677:     sta ddrb
+                        	   678: 
+00:15C4 A926            	   679:     lda #%00100110 ; d 64
+00:15C6 8D00C0          	   680:     sta prtb ;8421  
+00:15C9 0940            	   681:     ora #(E)
+00:15CB 8D00C0          	   682:     sta prtb
+00:15CE 29BF            	   683:     and #(~E)
+00:15D0 8D00C0          	   684:     sta prtb
+                        	   685: 
+00:15D3 A9F0            	   686:     lda #%11110000 ; set db7 pin to input
+00:15D5 8D02C0          	   687:     sta ddrb
+00:15D8 A910            	   688:     lda #RW ; read busy flag
+00:15DA 8D00C0          	   689:     sta prtb
+00:15DD A950            	   690:     lda #(RW | E)
+00:15DF 8D00C0          	   691:     sta prtb
+00:15E2 AD00C0          	   692:     lda prtb	
+00:15E5 2908            	   693:     and #%00001000 ; check if zero
+00:15E7 D0EF            	   694:     bne *-15
+00:15E9 A910            	   695:     lda #RW
+00:15EB 8D00C0          	   696:     sta prtb
+00:15EE A9FF            	   697:     lda #%11111111 ; return to all output
+00:15F0 8D02C0          	   698:     sta ddrb
+                        	   699: 
+00:15F3 A924            	   700:     lda #%00100100 ; 
+00:15F5 8D00C0          	   701:     sta prtb ;8421  
+00:15F8 0940            	   702:     ora #(E)
+00:15FA 8D00C0          	   703:     sta prtb
+00:15FD 29BF            	   704:     and #(~E)
+00:15FF 8D00C0          	   705:     sta prtb
+                        	   706:     
+00:1602 A9F0            	   707:     lda #%11110000 ; set db7 pin to input
+00:1604 8D02C0          	   708:     sta ddrb
+00:1607 A910            	   709:     lda #RW ; read busy flag
+00:1609 8D00C0          	   710:     sta prtb
+00:160C A950            	   711:     lda #(RW | E)
+00:160E 8D00C0          	   712:     sta prtb
+00:1611 AD00C0          	   713:     lda prtb	
+00:1614 2908            	   714:     and #%00001000 ; check if zero
+00:1616 D0EF            	   715:     bne *-15
+00:1618 A910            	   716:     lda #RW
+00:161A 8D00C0          	   717:     sta prtb
+00:161D A9FF            	   718:     lda #%11111111 ; return to all output
+00:161F 8D02C0          	   719:     sta ddrb
+                        	   720: 
+00:1622 A922            	   721:     lda #%00100010 ; ! 21
+00:1624 8D00C0          	   722:     sta prtb ;8421  
+00:1627 0940            	   723:     ora #(E)
+00:1629 8D00C0          	   724:     sta prtb
+00:162C 29BF            	   725:     and #(~E)
+00:162E 8D00C0          	   726:     sta prtb
+                        	   727: 
+00:1631 A9F0            	   728:     lda #%11110000 ; set db7 pin to input
+00:1633 8D02C0          	   729:     sta ddrb
+00:1636 A910            	   730:     lda #RW ; read busy flag
+00:1638 8D00C0          	   731:     sta prtb
+00:163B A950            	   732:     lda #(RW | E)
+00:163D 8D00C0          	   733:     sta prtb
+00:1640 AD00C0          	   734:     lda prtb	
+00:1643 2908            	   735:     and #%00001000 ; check if zero
+00:1645 D0EF            	   736:     bne *-15
+00:1647 A910            	   737:     lda #RW
+00:1649 8D00C0          	   738:     sta prtb
+00:164C A9FF            	   739:     lda #%11111111 ; return to all output
+00:164E 8D02C0          	   740:     sta ddrb
+                        	   741: 
+00:1651 A921            	   742:     lda #%00100001 ; 
+00:1653 8D00C0          	   743:     sta prtb ;8421  
+00:1656 0940            	   744:     ora #(E)
+00:1658 8D00C0          	   745:     sta prtb
+00:165B 29BF            	   746:     and #(~E)
+00:165D 8D00C0          	   747:     sta prtb
+                        	   748: 
+                        	   749: 
+00:1660 60              	   750: 	rts
+                        	   751: 
+                        	   752: 
+                        	   753: 
+
+
+Symbols by name:
+E                                E:0040
+RW                               E:0010
+ddrb                             E:C002
+k1                               A:10F2
+k2                               A:10F4
+prtb                             E:C000
+reset                            A:1000
+
+Symbols by value:
+0010 RW
+0040 E
+1000 reset
+10F2 k1
+10F4 k2
+C000 prtb
+C002 ddrb

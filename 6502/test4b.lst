@@ -1,0 +1,167 @@
+Sections:
+00: "seg1000" (1000-10B0)
+
+
+Source: "test4b.s"
+                        	     1: prtb = $c000
+                        	     2: prta = $c001
+                        	     3: ddrb = $c002
+                        	     4: ddra = $c003
+                        	     5: E =  %01000000
+                        	     6: RS = %00100000
+                        	     7: RW = %00010000
+                        	     8: 
+                        	     9: delay1 = $3d
+                        	    10: delay2 = $3e	; zero page variables for delay loop
+                        	    11: REG = $3f	; put in here active register to use
+                        	    12: 
+                        	    13:     org $1000
+                        	    14: 
+                        	    15: ; could never get the read busy flag to work in 4 bit mode consistently
+                        	    16: ; examined lots of code libraries for arduino, etc, 
+                        	    17: ; and they're all using fixed delays
+                        	    18: 
+                        	    19: main:
+00:1000 AD02C0          	    20:     lda ddrb	   ; get current state of pins
+00:1003 097F            	    21:     ora #%01111111 ; set bottom 7 pins to output
+00:1005 8D02C0          	    22:     sta ddrb
+                        	    23: 
+00:1008 A90C            	    24:     lda #$0c
+00:100A 209510          	    25:     jsr delay_long
+00:100D A903            	    26:     lda #%00000011 ; for lcd reset - delay 4100 us
+00:100F 207D10          	    27:     jsr lcd_ate
+                        	    28:     
+00:1012 A90C            	    29:     lda #$0c		; will loop ~1250 times...
+00:1014 209510          	    30:     jsr delay_long	; one ZP dec + bne = 8 cycles = (3.8 us)
+00:1017 A903            	    31:     lda #%00000011      ; for lcd reset - delay 100 us
+00:1019 207D10          	    32:     jsr lcd_ate
+                        	    33: 
+00:101C A902            	    34:     lda #$02	; loop ~500 times
+00:101E 209510          	    35:     jsr delay_long	
+00:1021 A903            	    36:     lda #%00000011 ; for lcd reset
+00:1023 207D10          	    37:     jsr lcd_ate	; now should be good, should be able to read from the busy flag
+                        	    38: 
+00:1026 A902            	    39:     lda #$02
+00:1028 209510          	    40:     jsr delay_long
+00:102B A902            	    41:     lda #%00000010 ; set 4 bit operation - currently 8 bit, completes in 1 ins
+00:102D 207D10          	    42:     jsr lcd_ate 
+                        	    43: 
+00:1030 A900            	    44:     lda #0
+00:1032 853F            	    45:     sta REG	; doing instructions now
+                        	    46: 
+00:1034 A928            	    47:     lda #%00101000	; set 4 bit operation with 2 line display 5x8 font
+00:1036 206510          	    48:     jsr lcd_dat 
+                        	    49: 
+00:1039 A901            	    50:     lda #%00000001	; clear screen
+00:103B 206510          	    51:     jsr lcd_dat 
+00:103E A906            	    52:     lda #$06
+00:1040 209510          	    53:     jsr delay_long
+                        	    54:     
+00:1043 A90E            	    55:     lda #%00001110	; turn on display and cursor
+00:1045 206510          	    56:     jsr lcd_dat 
+00:1048 A906            	    57:     lda #$06
+00:104A 209510          	    58:     jsr delay_long
+                        	    59: 
+00:104D A906            	    60:     lda #%00000110	; set increment to the address and cursor shift right
+00:104F 206510          	    61:     jsr lcd_dat 
+                        	    62: 
+00:1052 A920            	    63:     lda #(RS) 	; now use data register
+00:1054 853F            	    64:     sta REG
+                        	    65:     
+00:1056 A200            	    66:     ldx #$0
+00:1058 BDA210          	    67:     lda string,x
+                        	    68: print:
+00:105B 206510          	    69:     jsr lcd_dat
+00:105E E8              	    70:     inx
+00:105F BDA210          	    71:     lda string,x
+00:1062 D0F7            	    72:     bne print
+                        	    73:     
+                        	    74: 
+00:1064 60              	    75:     rts
+                        	    76: 
+                        	    77: lcd_dat:	; data comes in a
+00:1065 48              	    78:     pha	; save a
+00:1066 4A              	    79:     lsr
+00:1067 4A              	    80:     lsr	; get top 4 bits
+00:1068 4A              	    81:     lsr
+00:1069 4A              	    82:     lsr
+00:106A 053F            	    83:     ora REG	; select register to use 
+00:106C 207D10          	    84:     jsr lcd_ate
+00:106F 68              	    85:     pla	; restore a
+00:1070 290F            	    86:     and #%00001111 ; get low bits
+00:1072 053F            	    87:     ora REG   ; select register to use
+00:1074 207D10          	    88:     jsr lcd_ate
+00:1077 A90A            	    89:     lda #10
+00:1079 208E10          	    90:     jsr delay
+00:107C 60              	    91:     rts
+                        	    92: 
+                        	    93: lcd_ate:	; A is loaded with data, store it and toggle enable
+00:107D 8D00C0          	    94:     sta prtb
+00:1080 EA              	    95:     nop
+00:1081 0940            	    96:     ora #(E)
+00:1083 8D00C0          	    97:     sta prtb
+00:1086 EA              	    98:     nop
+00:1087 29BF            	    99:     and #(~E)
+00:1089 8D00C0          	   100:     sta prtb
+00:108C EA              	   101:     nop
+00:108D 60              	   102:     rts
+                        	   103: 
+                        	   104: delay:
+00:108E 853D            	   105:     sta delay1
+                        	   106: delay_loop:
+00:1090 C63D            	   107:     dec delay1
+00:1092 D0FC            	   108:     bne delay_loop
+00:1094 60              	   109:     rts
+                        	   110: 
+                        	   111: delay_long:
+00:1095 853D            	   112:     sta delay1
+00:1097 853E            	   113:     sta delay2
+                        	   114: delay_long_loop:
+00:1099 C63D            	   115:     dec delay1
+00:109B D0FC            	   116:     bne delay_long_loop
+00:109D C63E            	   117:     dec delay2
+00:109F D0F8            	   118:     bne delay_long_loop
+00:10A1 60              	   119:     rts 
+                        	   120: 
+                        	   121: string:
+00:10A2 48656C6C6F2C2057	   122:     dfb "Hello, World!",0
+00:10AA 6F726C6421
+00:10AF 00
+                        	   123: 
+
+
+Symbols by name:
+E                                E:0040
+REG                              E:003F
+RS                               E:0020
+ddrb                             E:C002
+delay                            A:108E
+delay1                           E:003D
+delay2                           E:003E
+delay_long                       A:1095
+delay_long_loop                  A:1099
+delay_loop                       A:1090
+lcd_ate                          A:107D
+lcd_dat                          A:1065
+main                             A:1000
+print                            A:105B
+prtb                             E:C000
+string                           A:10A2
+
+Symbols by value:
+0020 RS
+003D delay1
+003E delay2
+003F REG
+0040 E
+1000 main
+105B print
+1065 lcd_dat
+107D lcd_ate
+108E delay
+1090 delay_loop
+1095 delay_long
+1099 delay_long_loop
+10A2 string
+C000 prtb
+C002 ddrb

@@ -1,0 +1,88 @@
+; this program implements the sieve of eratosthenes on the z80 
+cpm:		equ	046fh
+data_start:	equ	1000h
+data_end:	equ 	3000h
+var_c:	equ	0ffeh
+org 0800h  ; set origin of execution
+; data segment at 1000h
+	ld de,data_start
+	ld a,00h
+zero_loop:
+	ld (de),a
+	inc de
+	ld hl,data_end
+	sbc hl,de
+	jp nz,zero_loop
+
+	ld de,02	; start sieve at c=2
+	ld (var_c),de	; store in ram too
+main_sieve_loop:	; we are using de for this loop
+	ld de,(var_c)
+	ld h,d		; ld hl,de
+	ld l,e		; use hl to figure out memory location
+	srl h		; since we can store 8 bits in each memory loc
+	rr l		; we need to shift left (16 bit) 3 times
+	srl h		; https://chilliant.com/z80shift.html
+	rr l		; 2
+	srl h
+	rr l		; 3
+	ld a,10h	
+	add a,h		; add 1000h to hl to get actual location
+	ld h,a		; here is the data in (hl)
+	ld a,00000111b
+	and e		; last 3 bits of de into a - will need srl a times
+	ld b,(hl)	; load the data into b
+	cp 0b		; compare a to 0
+shift_a_times_1:
+	jp z,done_shift_1
+	srl b
+	dec a
+	jp shift_a_times_1
+done_shift_1:		; a is garbage, b has the bit in the lsb position
+	ld a,00000001b
+	and b		; Z flag will be correct here if zero	
+	ld (var_c),de	; store de in memory
+	jp nz,end_main_sieve_loop	; non zero - just inc loop and get out
+; we found a zero, now need to loop and mark composites
+	ld h,d
+	ld l,e		; ld hl,de
+	ld b,d
+	ld c,e
+start_composite_loop:	; de stores the value in this loop
+	add hl,bc	; start at 2 * de to mark composites
+	jp c,end_main_sieve_loop	; get out if overflow 16 bit
+	ld d,h
+	ld e,l		; ld de,hl
+	srl h
+	rr l
+	srl h
+	rr l
+	srl h
+	rr l
+	ld a,10h
+	add a,h
+	ld h,a		; here is the data in (hl)
+	ld a,00000111b
+	and e		; a has which bit to set
+	ld b,00000001b	; start with lsb
+	cp 0b		; is a zero?
+shift_a_times_2:
+	jp z,done_shift_2
+	sla b
+	dec a
+	jp shift_a_times_2
+done_shift_2:	
+	ld a,(hl)	; retreive what is in memory
+	or b		; mark the bit
+	ld (hl),a	; write back to memory
+	ld h,d
+	ld l,e		; put hl back to where we were
+	ld bc,(var_c)	; put step into bc
+	jp start_composite_loop
+end_main_sieve_loop:	
+	ld de,(var_c)
+	inc de
+	jp nz,main_sieve_loop
+	out (0),a	; switch to ROM monitor
+	jp cpm
+	end

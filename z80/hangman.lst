@@ -1,0 +1,485 @@
+Sections:
+00: "seg800" (800-BD1)
+
+
+Source: "hangman.z80"
+                        	     1: ; Hangman game by Tom Lovie 2023-01-13
+                        	     2: ; Z80 assembly language	
+                        	     3: monitor_warm_start:	equ	0450h
+                        	     4: 
+                        	     5: 	org 0800h 		; set origin
+00:0800 CD0608          	     6: 	call hangman
+00:0803 C35004          	     7: 	jp monitor_warm_start
+                        	     8: 
+                        	     9: hangman:
+00:0806 21720A          	    10: 	ld hl,crlf
+00:0809 CD2509          	    11: 	call write_string	; write a blank line to start
+00:080C 21750A          	    12: 	ld hl,alphabet
+00:080F CDAB09          	    13: 	call init_alpha		; initialize the alphabet
+00:0812 DD21900A        	    14: 	ld ix,gallows
+00:0816 CD8609          	    15: 	call clr_guess		; reset the guess and gallows
+00:0819 3A1B09          	    16: 	ld a,(rand8+1)		; check if we aleady have a random seed
+00:081C B7              	    17: 	or a			; starts as zero
+00:081D 2005            	    18: 	jr nz,noseed
+00:081F ED5F            	    19: 	ld a,r			; get r (refresh) register for use as random seed into a
+00:0821 321B09          	    20: 	ld (rand8+1),a		; store r into random seed (via a)
+00:0824 21D10A          	    21: noseed:	ld hl,wordlist		; put start of wordlist in hl
+00:0827 CD3509          	    22: 	call get_rnd_word	; choose a random word (hl)
+00:082A 22B509          	    23: 	ld (word),hl		; store the address into word
+00:082D DD21BD09        	    24: 	ld ix,guess		; put the guess buffer into ix
+00:0831 CDED08          	    25: 	call init_guess		; initialize the guess
+00:0834 ED4BB709        	    26: loop:	ld bc,(cnt) 		; put count in b (stored as c,b in mem)
+00:0838 DD21900A        	    27: 	ld ix,gallows		; put the gallows in ix
+00:083C FD21BD09        	    28: 	ld iy,guess		; put the start of the guess buffer in iy
+00:0840 2AB509          	    29: 	ld hl,(word)		; put the start of the word in hl
+00:0843 CD4F09          	    30: 	call pop_guess		; update the gallows
+00:0846 21900A          	    31: 	ld hl,gallows		; put start of gallows in hl
+00:0849 CD2509          	    32: 	call write_string	; print out the gallows
+00:084C 21BD09          	    33: 	ld hl,guess		; put start of guess buffer in hl
+00:084F CD2509          	    34: 	call write_string	; print out guess buffer
+00:0852 21750A          	    35: 	ld hl,alphabet		; put start of alphabet in hl
+00:0855 CD2509          	    36: 	call write_string	; print out alphabet string
+00:0858 21720A          	    37: 	ld hl,crlf		; put start of crlf in hl
+00:085B CD2509          	    38: 	call write_string	; print crlf
+00:085E 3ABB09          	    39: 	ld a,(max_guess)	; put max guesses into a
+00:0861 ED4BB709        	    40: 	ld bc,(cnt)		; put max guesses into bc
+00:0865 90              	    41: 	sub b			; check for max guesses
+00:0866 CAB708          	    42: 	jp z,lose_game		; on zero jump to lose game
+00:0869 3ABC09          	    43: 	ld a,(num_blank)	; load number of periods into a
+00:086C A7              	    44: 	and a			; test for zero
+00:086D CABE08          	    45: 	jp z,win_game		; on zero jump to win game
+00:0870 21CD09          	    46: 	ld hl,prompt		; put start of prompt in hl
+00:0873 CD2509          	    47: 	call write_string	; print prompt			
+00:0876 CD1009          	    48: 	call get_char		; get a character from input
+00:0879 32B909          	    49: 	ld (char),a		; store char in mem
+00:087C 4F              	    50: 	ld c,a			; put character to search for in c
+00:087D 21750A          	    51: 	ld hl,alphabet		; put start of alphabet in hl
+00:0880 CD0109          	    52: 	call proc_alpha		; process the input char (zero flag set if char found)
+00:0883 C2A708          	    53: 	jp nz,inv_ch		; if we did not find char then skip down
+00:0886 2AB509          	    54: 	ld hl,(word)		; load the start word into hl
+00:0889 DD21BD09        	    55: 	ld ix,guess		; load the guess buffer into ix
+00:088D 0600            	    56: 	ld b,0			; b is changed to 1 if the letter was in the word
+00:088F 1600            	    57: 	ld d,0			; d is the count of periods in the guess buffer
+00:0891 CDD108          	    58: 	call proc_guess		; process the guess letter (still in c)
+00:0894 7A              	    59: 	ld a,d			; number of periods in d register
+00:0895 32BC09          	    60: 	ld (num_blank),a	; store the number of periods
+00:0898 3E01            	    61: 	ld a,1			; need to compare to b
+00:089A 90              	    62: 	sub b			; if zero then we had a match
+00:089B CAA708          	    63: 	jp z,inv_ch		; jump past the increment of the miss counter
+00:089E ED4BB709        	    64: 	ld bc,(cnt)		; load the miss counter from memory
+00:08A2 04              	    65: 	inc b			; increment
+00:08A3 ED43B709        	    66: 	ld (cnt),bc		; put the miss counter back into memory
+00:08A7 3E21            	    67: inv_ch:	ld a,"!"		; put ! in a
+00:08A9 91              	    68: 	sub c			; check if char matches
+00:08AA CAB608          	    69: 	jp z,exit		; exit if put in exclamation mark
+00:08AD 21720A          	    70: 	ld hl,crlf              ; not exit, so put start of crlf in hl
+00:08B0 CD2509          	    71:         call write_string       ; print crlf
+00:08B3 C33408          	    72: 	jp loop			; goto main prog loop
+00:08B6 C9              	    73: exit:	ret			; return control to OS
+                        	    74: lose_game:
+00:08B7 21FA09          	    75: 	ld hl,lose_prompt	; put start of lose message into hl
+00:08BA CD2509          	    76: 	call write_string	; print the lose message
+00:08BD C9              	    77: 	ret			; return control to OS
+                        	    78: win_game:
+00:08BE 21390A          	    79: 	ld hl,win_prompt	; put start of win message into hl
+00:08C1 CD2509          	    80: 	call write_string	; print the win message
+00:08C4 C9              	    81: 	ret			; return control to OS
+                        	    82: 
+                        	    83: ;Subroutine to expose entire word (when you lose)
+                        	    84: ;hl is selected word, ix is the guess buffer
+                        	    85: ;destroys hl,iy,a
+00:08C5 7E              	    86: expose_word:		ld a,(hl) 	; get the letter into a
+00:08C6 A7              	    87: 			and a		; check if zero (end of word)
+00:08C7 C8              	    88: 			ret z		; return if we are finished
+00:08C8 FD7700          	    89: 			ld (iy+0),a	; fill out the letter in the guess buffer
+00:08CB 23              	    90: 			inc hl		; increment counters
+00:08CC FD23            	    91: 			inc iy
+00:08CE C3C508          	    92: 			jp expose_word	; goto top
+                        	    93: 			
+                        	    94: 
+                        	    95: ;Subroutine to process the guessed character, exposes the char if it exists
+                        	    96: ;hl is the selected word, ix is the guess buffer, c is the character
+                        	    97: ;destroys hl,ix,a,b
+00:08D1 7E              	    98: proc_guess:		ld a,(hl)	; get the letter of the word into a
+00:08D2 A7              	    99: 			and a		; test for zero (end of word)
+00:08D3 C8              	   100: 			ret z		; return if we are at the end of word
+00:08D4 91              	   101: 			sub c		; compare with guessed letter
+00:08D5 C2DD08          	   102: 			jp nz,no_guess  ; if not match, then jump past exposing the letter
+00:08D8 DD7100          	   103: 			ld (ix+0),c	; if match then show letter in buffer
+00:08DB 0601            	   104: 			ld b,1		; show that we found a match
+00:08DD DD5E00          	   105: no_guess:		ld e,(ix+0)	; get the guess buffer character
+00:08E0 3E2E            	   106: 			ld a,"."	; load . into a
+00:08E2 93              	   107: 			sub e		; compare with period
+00:08E3 C2E708          	   108: 			jp nz, inc_cnt	; if not zero do not increment d
+00:08E6 14              	   109: 			inc d		; increment d there is a period
+00:08E7 23              	   110: inc_cnt:		inc hl		; increment word counter
+00:08E8 DD23            	   111: 			inc ix		; increment guess counter
+00:08EA C3D108          	   112: 			jp proc_guess	; do until we reach a zero (above)
+                        	   113: 
+                        	   114: ;Subroutine to initialize the guess buffer based in the selected word.
+                        	   115: ;hl is the selected word, ix is the guess buffer
+                        	   116: ;destroys hl,ix,a,bc
+00:08ED 060F            	   117: init_guess:		ld b,15			; 15 characters max
+00:08EF 0E2E            	   118: 			ld c,"."		; fill with periods
+00:08F1 7E              	   119: init_guess_loop:	ld a,(hl)		; get the current character
+00:08F2 A7              	   120: 			and a			; test if zero
+00:08F3 C2F808          	   121: 			jp nz,fill_buf		; if not zero jump past
+00:08F6 0E20            	   122: 			ld c," "		; if zero then change c to space
+00:08F8 DD7100          	   123: fill_buf:		ld (ix+0),c		; put c into guess buffer
+00:08FB 23              	   124: 			inc hl			; increment word buffer
+00:08FC DD23            	   125: 			inc ix			; increment guess buffer
+00:08FE 10F1            	   126: 			djnz init_guess_loop	; go until b=0
+00:0900 C9              	   127: 			ret
+                        	   128: 
+                        	   129: ;Subroutine to cross out a letter from the alphabet buffer
+                        	   130: ;Address of alphabet buffer in HL, letter in C
+                        	   131: ;destroys HL, B
+00:0901 061A            	   132: proc_alpha:		ld b,26			; 26 letter in alphabet
+00:0903 7E              	   133: proc_alpha_loop:	ld a,(hl)		; get the letter from the buffer
+00:0904 91              	   134: 			sub c 			; compare with letter in c
+00:0905 C20C09          	   135: 			jp nz,proc_alpha_nf	; if not zero 
+00:0908 3E20            	   136: 			ld a," "		; it was found - change to space
+00:090A 77              	   137: 			ld (hl),a		; write space char to mem
+00:090B C9              	   138: 			ret			; we found it so done
+00:090C 23              	   139: proc_alpha_nf:		inc hl			; move to next in buffer
+00:090D 10F4            	   140: 			djnz proc_alpha_loop	; dec b and start again
+00:090F C9              	   141: 			ret
+                        	   142: ;
+                        	   143: ;Get one ASCII character from the serial port.
+                        	   144: ;Returns with char in A reg. No error checking.
+00:0910 DB03            	   145: get_char:               in      a,(3)                   ;get status
+00:0912 E602            	   146:                         and     002h                    ;check RxRDY bit
+00:0914 CA1009          	   147:                         jp      z,get_char              ;not ready, loop
+00:0917 DB02            	   148:                         in      a,(2)                   ;get char
+00:0919 C9              	   149:                         ret
+                        	   150: 
+                        	   151: ;Subroutine to get a random number x[i+1] = 5 * x[i] + 1 mod 256
+                        	   152: ;destroys A,B - self modifying code
+00:091A 3E00            	   153: rand8:			ld	a,0 		; 0 is the random seed during compile
+00:091C 47              	   154: 			ld	b,a		; copy a for later
+00:091D 87              	   155: 			add	a,a		; double a
+00:091E 87              	   156: 			add	a,a		; double a again (times 4)
+00:091F 80              	   157: 			add 	a,b		; add back original a (times 5)
+00:0920 3C              	   158: 			inc	a		; add one
+00:0921 321B09          	   159: 			ld	(rand8+1),a	; store new random seed
+00:0924 C9              	   160: 			ret
+                        	   161: 
+                        	   162: 
+                        	   163: ;Subroutine to write a zero-terminated string to serial output
+                        	   164: ;Pass address of string in HL register
+                        	   165: ;No error checking
+00:0925 DB03            	   166: write_string:           in      a,(3)                   ;read status
+00:0927 E601            	   167:                         and     001h                    ;check TxRDY bit
+00:0929 CA2509          	   168:                         jp      z,write_string          ;loop if not set
+00:092C 7E              	   169:                         ld      a,(hl)                  ;get char from string
+00:092D A7              	   170:                         and     a                       ;check if 0
+00:092E C8              	   171:                         ret     z                       ;yes, finished
+00:092F D302            	   172:                         out     (2),a                   ;no, write char to output
+00:0931 23              	   173:                         inc     hl                      ;next char in string
+00:0932 C32509          	   174:                         jp      write_string            ;start over
+                        	   175: 
+                        	   176: ;Subroutine to get a random number (n), and find the location of the (n)th word in the list
+                        	   177: ;needs start of word list in hl, returns the address of the start of a word in hl
+                        	   178: ;destroys A,B,HL
+00:0935 CD1A09          	   179: get_rnd_word:		call rand8	; random 8 bit int in A
+00:0938 CB3F            	   180: 			srl	a	; divide by 2
+00:093A CB3F            	   181: 			srl	a	; divide by 4	
+00:093C CB3F            	   182: 			srl	a	; divide by 8
+00:093E 47              	   183: 			ld 	b,a	; store in B
+00:093F 04              	   184: 			inc	b	; the start of the word list begins with a zero
+00:0940 7E              	   185: grw_mvnext:		ld	a,(hl)	; load the char into a
+00:0941 A7              	   186: 			and	a		; check if zero
+00:0942 C24909          	   187: 			jp	nz,grw_nz	; if non-zero we are not on the start of word
+00:0945 05              	   188: 			dec 	b		; if zero decrement b and test if zero
+00:0946 CA4D09          	   189: 			jp	z,grw_exit	; if zero, then we are at (n)th word
+00:0949 23              	   190: grw_nz:			inc	hl		; move to next character
+00:094A C34009          	   191: 			jp 	grw_mvnext	; continue to loop
+00:094D 23              	   192: grw_exit:		inc	hl		; move one more char to get off 0 terminator
+00:094E C9              	   193: 			ret
+                        	   194: 
+                        	   195: ;Subroutine to populate hangman with number of incorrect guesses
+                        	   196: ;Put number of guesses in B, hangman location IX, destroys A, B
+00:094F 04              	   197: pop_guess:	inc	b	; hack so next statement will set the flags
+00:0950 05              	   198: 		dec	b	; back at whatever b was, but flags are set
+00:0951 C8              	   199: 		ret	z	; return if zero
+00:0952 3E4F            	   200: 		ld	a,"O"	; head character
+00:0954 DD7718          	   201: 		ld	(ix+24),a	; write to head location in gallows
+00:0957 05              	   202: 		dec	b	; wrote a character, so decrease b
+00:0958 C8              	   203: 		ret	z	; return if zero
+00:0959 3E7C            	   204: 		ld	a,"|"	; body character
+00:095B DD772A          	   205: 		ld	(ix+42),a	; write to body location in gallows
+00:095E 3E2B            	   206: 		ld	a,"+"	; other body character
+00:0960 DD7721          	   207: 		ld	(ix+33),a	; write to other body location
+00:0963 DD7734          	   208: 		ld	(ix+52),a	; write to other body location
+00:0966 05              	   209: 		dec	b	; wrote a character, so decrease b
+00:0967 C8              	   210: 		ret	z	; return if zero
+00:0968 3E2F            	   211: 		ld	a,"/"	; left arm
+00:096A DD7729          	   212: 		ld	(ix+41),a	; left arm location
+00:096D 05              	   213: 		dec	b	; wrote a character, so decrease b
+00:096E C8              	   214: 		ret	z	; return if zero
+00:096F 3E5C            	   215: 		ld	a,"\"	; right arm
+00:0971 DD772B          	   216: 		ld	(ix+43),a	; right arm location
+00:0974 05              	   217: 		dec	b	; wrote a character so decrease b
+00:0975 C8              	   218: 		ret	z	; return if zero
+00:0976 3E2F            	   219: 		ld	a,"/"	; left leg
+00:0978 DD773C          	   220: 		ld	(ix+60),a	; left leg location
+00:097B 05              	   221: 		dec	b	; wrote a character so decrease b
+00:097C C8              	   222: 		ret	z	; return if zero
+00:097D 3E5C            	   223: 		ld	a,"\"	; right leg
+00:097F DD773E          	   224: 		ld	(ix+62),a	; right leg location
+00:0982 CDC508          	   225: 		call	expose_word	; if get here, then you have lost, and word shown
+00:0985 C9              	   226: 		ret	; go back to calling location
+                        	   227: 
+                        	   228: ;Subroutine to reset hangman to zero guesses
+                        	   229: ;Location in IX, destroys A
+00:0986 3E20            	   230: clr_guess:	ld	a," "		; space character is eraser
+00:0988 DD7718          	   231: 		ld	(ix+24),a	; all hangman locations below
+00:098B DD772A          	   232: 		ld	(ix+42),a
+00:098E DD7721          	   233: 		ld	(ix+33),a
+00:0991 DD7734          	   234: 		ld	(ix+52),a
+00:0994 DD7729          	   235: 		ld	(ix+41),a
+00:0997 DD772B          	   236: 		ld	(ix+43),a
+00:099A DD773C          	   237: 		ld	(ix+60),a
+00:099D DD773E          	   238: 		ld	(ix+62),a
+00:09A0 32BC09          	   239: 		ld (num_blank),a	; reset the number of unknown letters
+00:09A3 AF              	   240: 		xor	a		; reset the number of guesses
+00:09A4 32B709          	   241: 		ld (cnt),a
+00:09A7 32B809          	   242: 		ld (cnt+1),a
+00:09AA C9              	   243: 		ret
+                        	   244: 
+                        	   245: ;Subroutine to initialize alphabet
+                        	   246: ;destroys HL, A, B
+00:09AB 061A            	   247: init_alpha: 		ld b,26		; 26 letters in string
+00:09AD 3E41            	   248: 			ld a,"A"	; start at letter A
+00:09AF 77              	   249: init_alpha_loop:	ld (hl),a	
+00:09B0 3C              	   250: 			inc a
+00:09B1 23              	   251: 			inc hl
+00:09B2 10FB            	   252: 			djnz init_alpha_loop
+00:09B4 C9              	   253: 			ret
+                        	   254: 
+                        	   255: ; variables and constants are stored in memory here
+00:09B5 D10A            	   256: word:		dfw wordlist
+00:09B7 0000            	   257: cnt:		dfw 0			; number of incorrect guesses
+00:09B9 0000            	   258: char:		dfw 0			; input character
+00:09BB 06              	   259: max_guess:	dfb 6			; defined max guesses
+00:09BC 01              	   260: num_blank:	dfb 1			; used to count the number of unknown letters
+00:09BD 2020202020202020	   261: guess:		dfb "               ",0 ; buffer to build the guessed word
+00:09C5 20202020202020
+00:09CC 00
+00:09CD 477565737320616E	   262: prompt:		dfb "Guess any letter (upper case) [! to exit] ->",0
+00:09D5 79206C6574746572
+00:09DD 2028757070657220
+00:09E5 6361736529205B21
+00:09ED 20746F2065786974
+00:09F5 5D202D3E
+00:09F9 00
+00:09FA 596F752068617665	   263: lose_prompt:	dfb "You have ran out of guesses and lost, better luck next time.",0dh,0ah,0
+00:0A02 2072616E206F7574
+00:0A0A 206F662067756573
+00:0A12 73657320616E6420
+00:0A1A 6C6F73742C206265
+00:0A22 74746572206C7563
+00:0A2A 6B206E6578742074
+00:0A32 696D652E
+00:0A36 0D
+00:0A37 0A
+00:0A38 00
+00:0A39 436F6E6772617475	   264: win_prompt:	dfb "Congratulations - you have won the game.... this time.",0dh,0ah,0
+00:0A41 6C6174696F6E7320
+00:0A49 2D20796F75206861
+00:0A51 766520776F6E2074
+00:0A59 68652067616D652E
+00:0A61 2E2E2E2074686973
+00:0A69 2074696D652E
+00:0A6F 0D
+00:0A70 0A
+00:0A71 00
+00:0A72 0D              	   265: crlf:		dfb 0dh,0ah,0
+00:0A73 0A
+00:0A74 00
+00:0A75 4142434445464748	   266: alphabet:	dfb "ABCDEFGHIJKLMNOPQRSTUVWXYZ",0
+00:0A7D 494A4B4C4D4E4F50
+00:0A85 5152535455565758
+00:0A8D 595A
+00:0A8F 00
+00:0A90 2B2D2D2D2D2D2B  	   267: gallows:	dfb "+-----+",0dh,0ah  ;9
+00:0A97 0D
+00:0A98 0A
+00:0A99 7C20202020207C  	   268: 		dfb "|     |",0dh,0ah  ;18
+00:0AA0 0D
+00:0AA1 0A
+00:0AA2 7C202020202020  	   269: 		dfb "|      ",0dh,0ah  ;27
+00:0AA9 0D
+00:0AAA 0A
+00:0AAB 7C202020202020  	   270: 		dfb "|      ",0dh,0ah  ;36
+00:0AB2 0D
+00:0AB3 0A
+00:0AB4 7C20202020202020	   271: 		dfb "|       ",0dh,0ah ;46
+00:0ABC 0D
+00:0ABD 0A
+00:0ABE 7C202020202020  	   272: 		dfb "|      ",0dh,0ah  ;55
+00:0AC5 0D
+00:0AC6 0A
+00:0AC7 7C20202020202020	   273: 		dfb "|       ",0dh,0ah ;65  first 0 of wordlist terminates the gallows
+00:0ACF 0D
+00:0AD0 0A
+00:0AD1 00              	   274: wordlist:	dfb 0,"BEEKEEPER",0,"ROGUE",0,"ATTACK",0,"PYRAMID"
+00:0AD2 4245454B45455045
+00:0ADA 52
+00:0ADB 00
+00:0ADC 524F475545
+00:0AE1 00
+00:0AE2 41545441434B
+00:0AE8 00
+00:0AE9 505952414D4944
+00:0AF0 00              	   275: 		dfb 0,"PRISM",0,"SECTOR",0,"TRIANGLE",0,"GREEN"
+00:0AF1 505249534D
+00:0AF6 00
+00:0AF7 534543544F52
+00:0AFD 00
+00:0AFE 545249414E474C45
+00:0B06 00
+00:0B07 475245454E
+00:0B0C 00              	   276: 		dfb 0,"ROUND",0,"AIRPLANE",0,"INTERVAL",0,"POINT"
+00:0B0D 524F554E44
+00:0B12 00
+00:0B13 414952504C414E45
+00:0B1B 00
+00:0B1C 494E54455256414C
+00:0B24 00
+00:0B25 504F494E54
+00:0B2A 00              	   277: 		dfb 0,"ECLIPSE",0,"ATLAS",0,"MYSTIFY",0,"ANIMAL"
+00:0B2B 45434C49505345
+00:0B32 00
+00:0B33 41544C4153
+00:0B38 00
+00:0B39 4D595354494659
+00:0B40 00
+00:0B41 414E494D414C
+00:0B47 00              	   278: 		dfb 0,"ERASER",0,"COMPUTER",0,"SWIMMING",0,"CHEMISTRY"
+00:0B48 455241534552
+00:0B4E 00
+00:0B4F 434F4D5055544552
+00:0B57 00
+00:0B58 5357494D4D494E47
+00:0B60 00
+00:0B61 4348454D49535452
+00:0B69 59
+00:0B6A 00              	   279: 		dfb 0,"ENVELOPE",0,"ZENITH",0,"VERMILLION",0,"QUIXOTIC"
+00:0B6B 454E56454C4F5045
+00:0B73 00
+00:0B74 5A454E495448
+00:0B7A 00
+00:0B7B 5645524D494C4C49
+00:0B83 4F4E
+00:0B85 00
+00:0B86 515549584F544943
+00:0B8E 00              	   280: 		dfb 0,"PARADIGM",0,"LUCID",0,"FORTITUDE",0,"DUBIOUS"
+00:0B8F 504152414449474D
+00:0B97 00
+00:0B98 4C55434944
+00:0B9D 00
+00:0B9E 464F525449545544
+00:0BA6 45
+00:0BA7 00
+00:0BA8 445542494F5553
+00:0BAF 00              	   281: 		dfb 0,"VOLLEYBALL",0,"RETAIN",0,"KEYBOARD",0,"OCEAN",0
+00:0BB0 564F4C4C45594241
+00:0BB8 4C4C
+00:0BBA 00
+00:0BBB 52455441494E
+00:0BC1 00
+00:0BC2 4B4559424F415244
+00:0BCA 00
+00:0BCB 4F4345414E
+00:0BD0 00
+                        	   282: 
+
+
+Symbols by name:
+alphabet                         A:0A75
+char                             A:09B9
+clr_guess                        A:0986
+cnt                              A:09B7
+crlf                             A:0A72
+exit                             A:08B6
+expose_word                      A:08C5
+fill_buf                         A:08F8
+gallows                          A:0A90
+get_char                         A:0910
+get_rnd_word                     A:0935
+grw_exit                         A:094D
+grw_mvnext                       A:0940
+grw_nz                           A:0949
+guess                            A:09BD
+hangman                          A:0806
+inc_cnt                          A:08E7
+init_alpha                       A:09AB
+init_alpha_loop                  A:09AF
+init_guess                       A:08ED
+init_guess_loop                  A:08F1
+inv_ch                           A:08A7
+loop                             A:0834
+lose_game                        A:08B7
+lose_prompt                      A:09FA
+max_guess                        A:09BB
+monitor_warm_start               E:0450
+no_guess                         A:08DD
+noseed                           A:0824
+num_blank                        A:09BC
+pop_guess                        A:094F
+proc_alpha                       A:0901
+proc_alpha_loop                  A:0903
+proc_alpha_nf                    A:090C
+proc_guess                       A:08D1
+prompt                           A:09CD
+rand8                            A:091A
+win_game                         A:08BE
+win_prompt                       A:0A39
+word                             A:09B5
+wordlist                         A:0AD1
+write_string                     A:0925
+
+Symbols by value:
+0450 monitor_warm_start
+0806 hangman
+0824 noseed
+0834 loop
+08A7 inv_ch
+08B6 exit
+08B7 lose_game
+08BE win_game
+08C5 expose_word
+08D1 proc_guess
+08DD no_guess
+08E7 inc_cnt
+08ED init_guess
+08F1 init_guess_loop
+08F8 fill_buf
+0901 proc_alpha
+0903 proc_alpha_loop
+090C proc_alpha_nf
+0910 get_char
+091A rand8
+0925 write_string
+0935 get_rnd_word
+0940 grw_mvnext
+0949 grw_nz
+094D grw_exit
+094F pop_guess
+0986 clr_guess
+09AB init_alpha
+09AF init_alpha_loop
+09B5 word
+09B7 cnt
+09B9 char
+09BB max_guess
+09BC num_blank
+09BD guess
+09CD prompt
+09FA lose_prompt
+0A39 win_prompt
+0A72 crlf
+0A75 alphabet
+0A90 gallows
+0AD1 wordlist

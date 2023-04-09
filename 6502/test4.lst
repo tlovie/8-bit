@@ -1,0 +1,412 @@
+Sections:
+00: "seg1000" (1000-12FA)
+
+
+Source: "test4.s"
+                        	     1: prtb = $c000
+                        	     2: prta = $c001
+                        	     3: ddrb = $c002
+                        	     4: ddra = $c003
+                        	     5: E =  %01000000
+                        	     6: RS = %00100000
+                        	     7: RW = %00010000
+                        	     8: 
+                        	     9: delay1 = $3d
+                        	    10: delay2 = $3e	; zero page variables for delay loop
+                        	    11: 
+                        	    12:     org $1000
+                        	    13: 
+                        	    14: reset:
+00:1000 A9FF            	    15:     lda #%11111111 ; set all pins to output
+00:1002 8D02C0          	    16:     sta ddrb
+                        	    17: 
+00:1005 A903            	    18:     lda #%00000011 ; for lcd reset - delay 4100 us
+00:1007 8D00C0          	    19:     sta prtb
+00:100A 0940            	    20:     ora #(E)
+00:100C 8D00C0          	    21:     sta prtb
+00:100F 29BF            	    22:     and #(~E)
+00:1011 8D00C0          	    23:     sta prtb
+00:1014 A906            	    24:     lda #$06	; will loop ~1500 times...
+00:1016 20ED12          	    25:     jsr delay	; one ZP dec + bne = 7 cycles = (3.8 us)
+                        	    26: 
+00:1019 A903            	    27:     lda #%00000011 ; for lcd reset - delay 100 us
+00:101B 8D00C0          	    28:     sta prtb
+00:101E 0940            	    29:     ora #(E)
+00:1020 8D00C0          	    30:     sta prtb
+00:1023 29BF            	    31:     and #(~E)
+00:1025 8D00C0          	    32:     sta prtb
+00:1028 A902            	    33:     lda #$02	; loop ~250 times
+00:102A 20ED12          	    34:     jsr delay	
+                        	    35: 
+00:102D A903            	    36:     lda #%00000011 ; for lcd reset
+00:102F 8D00C0          	    37:     sta prtb
+00:1032 0940            	    38:     ora #(E)
+00:1034 8D00C0          	    39:     sta prtb
+00:1037 29BF            	    40:     and #(~E)
+00:1039 8D00C0          	    41:     sta prtb
+                        	    42: 	; now should be good, should be able to read from the busy flag
+                        	    43: 
+                        	    44: 
+00:103C 20C112          	    45:     jsr lcd_wait
+00:103F A902            	    46:     lda #%00000010 ; set 4 bit operation - currently 8 bit, completes in 1 ins
+00:1041 8D00C0          	    47:     sta prtb
+00:1044 0940            	    48:     ora #(E)
+00:1046 8D00C0          	    49:     sta prtb
+00:1049 29BF            	    50:     and #(~E)
+00:104B 8D00C0          	    51:     sta prtb
+                        	    52: 
+00:104E 20C112          	    53:     jsr lcd_wait
+00:1051 A902            	    54:     lda #%00000010 ; set 4 bit operation with 2 line display 5x8 font (2 instructions)
+00:1053 8D00C0          	    55:     sta prtb
+00:1056 0940            	    56:     ora #(E)
+00:1058 8D00C0          	    57:     sta prtb
+00:105B 29BF            	    58:     and #(~E)
+00:105D 8D00C0          	    59:     sta prtb
+                        	    60: 
+00:1060 20C112          	    61:     jsr lcd_wait
+00:1063 A908            	    62:     lda #%00001000 ; continued above instruction
+00:1065 8D00C0          	    63:     sta prtb ;8421  
+00:1068 0940            	    64:     ora #(E)
+00:106A 8D00C0          	    65:     sta prtb
+00:106D 29BF            	    66:     and #(~E)
+00:106F 8D00C0          	    67:     sta prtb
+                        	    68: 
+00:1072 20C112          	    69:     jsr lcd_wait
+00:1075 A900            	    70:     lda #%00000000 ; clear screen
+00:1077 8D00C0          	    71:     sta prtb ;8421  
+00:107A 0940            	    72:     ora #(E)
+00:107C 8D00C0          	    73:     sta prtb
+00:107F 29BF            	    74:     and #(~E)
+00:1081 8D00C0          	    75:     sta prtb
+                        	    76: 
+00:1084 20C112          	    77:     jsr lcd_wait
+00:1087 A901            	    78:     lda #%00000001 ; 
+00:1089 8D00C0          	    79:     sta prtb ;8421  
+00:108C 0940            	    80:     ora #(E)
+00:108E 8D00C0          	    81:     sta prtb
+00:1091 29BF            	    82:     and #(~E)
+00:1093 8D00C0          	    83:     sta prtb
+                        	    84:     
+00:1096 A0FF            	    85:     ldy #$ff
+00:1098 A2FF            	    86: k1: ldx #$ff
+00:109A EA              	    87: k2: nop
+00:109B EA              	    88:     nop
+00:109C EA              	    89:     nop
+00:109D EA              	    90:     nop
+00:109E CA              	    91:     dex
+00:109F D0F9            	    92:     bne k2
+00:10A1 88              	    93:     dey
+00:10A2 D0F4            	    94:     bne k1
+                        	    95:  
+                        	    96: 
+00:10A4 20C112          	    97:     jsr lcd_wait
+00:10A7 A900            	    98:     lda #%00000000 ; turn on display and cursor
+00:10A9 8D00C0          	    99:     sta prtb ;8421  
+00:10AC 0940            	   100:     ora #(E)
+00:10AE 8D00C0          	   101:     sta prtb
+00:10B1 29BF            	   102:     and #(~E)
+00:10B3 8D00C0          	   103:     sta prtb
+                        	   104: 
+00:10B6 20C112          	   105:     jsr lcd_wait
+00:10B9 A90E            	   106:     lda #%00001110 ; turn on display and cursor
+00:10BB 8D00C0          	   107:     sta prtb ;8421  
+00:10BE 0940            	   108:     ora #(E)
+00:10C0 8D00C0          	   109:     sta prtb
+00:10C3 29BF            	   110:     and #(~E)
+00:10C5 8D00C0          	   111:     sta prtb
+                        	   112: 
+00:10C8 20C112          	   113:     jsr lcd_wait
+00:10CB A900            	   114:     lda #%00000000 ; set increment to the address and cursor shift right
+00:10CD 8D00C0          	   115:     sta prtb ;8421  
+00:10D0 0940            	   116:     ora #(E)
+00:10D2 8D00C0          	   117:     sta prtb
+00:10D5 29BF            	   118:     and #(~E)
+00:10D7 8D00C0          	   119:     sta prtb
+                        	   120: 
+00:10DA 20C112          	   121:     jsr lcd_wait
+00:10DD A906            	   122:     lda #%00000110 ; 
+00:10DF 8D00C0          	   123:     sta prtb ;8421  
+00:10E2 0940            	   124:     ora #(E)
+00:10E4 8D00C0          	   125:     sta prtb
+00:10E7 29BF            	   126:     and #(~E)
+00:10E9 8D00C0          	   127:     sta prtb
+                        	   128:     
+00:10EC 20C112          	   129:     jsr lcd_wait
+00:10EF A924            	   130:     lda #%00100100 ; H 48
+00:10F1 8D00C0          	   131:     sta prtb ;8421  
+00:10F4 0940            	   132:     ora #(E)
+00:10F6 8D00C0          	   133:     sta prtb
+00:10F9 29BF            	   134:     and #(~E)
+00:10FB 8D00C0          	   135:     sta prtb
+                        	   136: 
+00:10FE 20C112          	   137:     jsr lcd_wait
+00:1101 A928            	   138:     lda #%00101000 ; 
+00:1103 8D00C0          	   139:     sta prtb ;8421  
+00:1106 0940            	   140:     ora #(E)
+00:1108 8D00C0          	   141:     sta prtb
+00:110B 29BF            	   142:     and #(~E)
+00:110D 8D00C0          	   143:     sta prtb
+                        	   144: 
+00:1110 20C112          	   145:     jsr lcd_wait
+00:1113 A926            	   146:     lda #%00100110 ; e 65
+00:1115 8D00C0          	   147:     sta prtb ;8421  
+00:1118 0940            	   148:     ora #(E)
+00:111A 8D00C0          	   149:     sta prtb
+00:111D 29BF            	   150:     and #(~E)
+00:111F 8D00C0          	   151:     sta prtb
+                        	   152: 
+00:1122 20C112          	   153:     jsr lcd_wait
+00:1125 A925            	   154:     lda #%00100101 ; 
+00:1127 8D00C0          	   155:     sta prtb ;8421  
+00:112A 0940            	   156:     ora #(E)
+00:112C 8D00C0          	   157:     sta prtb
+00:112F 29BF            	   158:     and #(~E)
+00:1131 8D00C0          	   159:     sta prtb
+                        	   160: 
+00:1134 20C112          	   161:     jsr lcd_wait
+00:1137 A926            	   162:     lda #%00100110 ; l 6c
+00:1139 8D00C0          	   163:     sta prtb ;8421  
+00:113C 0940            	   164:     ora #(E)
+00:113E 8D00C0          	   165:     sta prtb
+00:1141 29BF            	   166:     and #(~E)
+00:1143 8D00C0          	   167:     sta prtb
+                        	   168: 
+00:1146 20C112          	   169:     jsr lcd_wait
+00:1149 A92C            	   170:     lda #%00101100 ; 
+00:114B 8D00C0          	   171:     sta prtb ;8421  
+00:114E 0940            	   172:     ora #(E)
+00:1150 8D00C0          	   173:     sta prtb
+00:1153 29BF            	   174:     and #(~E)
+00:1155 8D00C0          	   175:     sta prtb
+                        	   176: 
+00:1158 20C112          	   177:     jsr lcd_wait
+00:115B A926            	   178:     lda #%00100110 ; l 6c
+00:115D 8D00C0          	   179:     sta prtb ;8421  
+00:1160 0940            	   180:     ora #(E)
+00:1162 8D00C0          	   181:     sta prtb
+00:1165 29BF            	   182:     and #(~E)
+00:1167 8D00C0          	   183:     sta prtb
+                        	   184: 
+00:116A 20C112          	   185:     jsr lcd_wait
+00:116D A92C            	   186:     lda #%00101100 ; 
+00:116F 8D00C0          	   187:     sta prtb ;8421  
+00:1172 0940            	   188:     ora #(E)
+00:1174 8D00C0          	   189:     sta prtb
+00:1177 29BF            	   190:     and #(~E)
+00:1179 8D00C0          	   191:     sta prtb
+                        	   192:     
+00:117C 20C112          	   193:     jsr lcd_wait
+00:117F A926            	   194:     lda #%00100110 ; o 6f
+00:1181 8D00C0          	   195:     sta prtb ;8421  
+00:1184 0940            	   196:     ora #(E)
+00:1186 8D00C0          	   197:     sta prtb
+00:1189 29BF            	   198:     and #(~E)
+00:118B 8D00C0          	   199:     sta prtb
+                        	   200: 
+00:118E 20C112          	   201:     jsr lcd_wait
+00:1191 A92F            	   202:     lda #%00101111 ; 
+00:1193 8D00C0          	   203:     sta prtb ;8421  
+00:1196 0940            	   204:     ora #(E)
+00:1198 8D00C0          	   205:     sta prtb
+00:119B 29BF            	   206:     and #(~E)
+00:119D 8D00C0          	   207:     sta prtb
+                        	   208: 
+00:11A0 20C112          	   209:     jsr lcd_wait
+00:11A3 A922            	   210:     lda #%00100010 ; , 2c
+00:11A5 8D00C0          	   211:     sta prtb ;8421  
+00:11A8 0940            	   212:     ora #(E)
+00:11AA 8D00C0          	   213:     sta prtb
+00:11AD 29BF            	   214:     and #(~E)
+00:11AF 8D00C0          	   215:     sta prtb
+                        	   216: 
+00:11B2 20C112          	   217:     jsr lcd_wait
+00:11B5 A92C            	   218:     lda #%00101100 ; 
+00:11B7 8D00C0          	   219:     sta prtb ;8421  
+00:11BA 0940            	   220:     ora #(E)
+00:11BC 8D00C0          	   221:     sta prtb
+00:11BF 29BF            	   222:     and #(~E)
+00:11C1 8D00C0          	   223:     sta prtb
+                        	   224: 
+00:11C4 20C112          	   225:     jsr lcd_wait
+00:11C7 A922            	   226:     lda #%00100010 ; " " 20
+00:11C9 8D00C0          	   227:     sta prtb ;8421  
+00:11CC 0940            	   228:     ora #(E)
+00:11CE 8D00C0          	   229:     sta prtb
+00:11D1 29BF            	   230:     and #(~E)
+00:11D3 8D00C0          	   231:     sta prtb
+                        	   232: 
+00:11D6 20C112          	   233:     jsr lcd_wait
+00:11D9 A920            	   234:     lda #%00100000 ; 
+00:11DB 8D00C0          	   235:     sta prtb ;8421  
+00:11DE 0940            	   236:     ora #(E)
+00:11E0 8D00C0          	   237:     sta prtb
+00:11E3 29BF            	   238:     and #(~E)
+00:11E5 8D00C0          	   239:     sta prtb
+                        	   240: 
+00:11E8 20C112          	   241:     jsr lcd_wait
+00:11EB A925            	   242:     lda #%00100101 ; W 57
+00:11ED 8D00C0          	   243:     sta prtb ;8421  
+00:11F0 0940            	   244:     ora #(E)
+00:11F2 8D00C0          	   245:     sta prtb
+00:11F5 29BF            	   246:     and #(~E)
+00:11F7 8D00C0          	   247:     sta prtb
+                        	   248: 
+00:11FA 20C112          	   249:     jsr lcd_wait
+00:11FD A927            	   250:     lda #%00100111 ; 
+00:11FF 8D00C0          	   251:     sta prtb ;8421  
+00:1202 0940            	   252:     ora #(E)
+00:1204 8D00C0          	   253:     sta prtb
+00:1207 29BF            	   254:     and #(~E)
+00:1209 8D00C0          	   255:     sta prtb
+                        	   256: 
+00:120C 20C112          	   257:     jsr lcd_wait
+00:120F A926            	   258:     lda #%00100110 ; o 6f
+00:1211 8D00C0          	   259:     sta prtb ;8421  
+00:1214 0940            	   260:     ora #(E)
+00:1216 8D00C0          	   261:     sta prtb
+00:1219 29BF            	   262:     and #(~E)
+00:121B 8D00C0          	   263:     sta prtb
+                        	   264: 
+00:121E 20C112          	   265:     jsr lcd_wait
+00:1221 A92F            	   266:     lda #%00101111 ; 
+00:1223 8D00C0          	   267:     sta prtb ;8421  
+00:1226 0940            	   268:     ora #(E)
+00:1228 8D00C0          	   269:     sta prtb
+00:122B 29BF            	   270:     and #(~E)
+00:122D 8D00C0          	   271:     sta prtb
+                        	   272: 
+00:1230 20C112          	   273:     jsr lcd_wait
+00:1233 A927            	   274:     lda #%00100111 ; r 72
+00:1235 8D00C0          	   275:     sta prtb ;8421  
+00:1238 0940            	   276:     ora #(E)
+00:123A 8D00C0          	   277:     sta prtb
+00:123D 29BF            	   278:     and #(~E)
+00:123F 8D00C0          	   279:     sta prtb
+                        	   280: 
+00:1242 20C112          	   281:     jsr lcd_wait
+00:1245 A922            	   282:     lda #%00100010 ; 
+00:1247 8D00C0          	   283:     sta prtb ;8421  
+00:124A 0940            	   284:     ora #(E)
+00:124C 8D00C0          	   285:     sta prtb
+00:124F 29BF            	   286:     and #(~E)
+00:1251 8D00C0          	   287:     sta prtb
+                        	   288: 
+00:1254 20C112          	   289:     jsr lcd_wait
+00:1257 A926            	   290:     lda #%00100110 ; l 6c
+00:1259 8D00C0          	   291:     sta prtb ;8421  
+00:125C 0940            	   292:     ora #(E)
+00:125E 8D00C0          	   293:     sta prtb
+00:1261 29BF            	   294:     and #(~E)
+00:1263 8D00C0          	   295:     sta prtb
+                        	   296: 
+00:1266 20C112          	   297:     jsr lcd_wait
+00:1269 A92C            	   298:     lda #%00101100 ; 
+00:126B 8D00C0          	   299:     sta prtb ;8421  
+00:126E 0940            	   300:     ora #(E)
+00:1270 8D00C0          	   301:     sta prtb
+00:1273 29BF            	   302:     and #(~E)
+00:1275 8D00C0          	   303:     sta prtb
+                        	   304:     
+00:1278 20C112          	   305:     jsr lcd_wait
+00:127B A926            	   306:     lda #%00100110 ; d 64
+00:127D 8D00C0          	   307:     sta prtb ;8421  
+00:1280 0940            	   308:     ora #(E)
+00:1282 8D00C0          	   309:     sta prtb
+00:1285 29BF            	   310:     and #(~E)
+00:1287 8D00C0          	   311:     sta prtb
+                        	   312: 
+00:128A 20C112          	   313:     jsr lcd_wait
+00:128D A924            	   314:     lda #%00100100 ; 
+00:128F 8D00C0          	   315:     sta prtb ;8421  
+00:1292 0940            	   316:     ora #(E)
+00:1294 8D00C0          	   317:     sta prtb
+00:1297 29BF            	   318:     and #(~E)
+00:1299 8D00C0          	   319:     sta prtb
+                        	   320:     
+00:129C 20C112          	   321:     jsr lcd_wait
+00:129F A922            	   322:     lda #%00100010 ; ! 21
+00:12A1 8D00C0          	   323:     sta prtb ;8421  
+00:12A4 0940            	   324:     ora #(E)
+00:12A6 8D00C0          	   325:     sta prtb
+00:12A9 29BF            	   326:     and #(~E)
+00:12AB 8D00C0          	   327:     sta prtb
+                        	   328: 
+00:12AE 20C112          	   329:     jsr lcd_wait
+00:12B1 A921            	   330:     lda #%00100001 ; 
+00:12B3 8D00C0          	   331:     sta prtb ;8421  
+00:12B6 0940            	   332:     ora #(E)
+00:12B8 8D00C0          	   333:     sta prtb
+00:12BB 29BF            	   334:     and #(~E)
+00:12BD 8D00C0          	   335:     sta prtb
+                        	   336: 
+                        	   337: 
+00:12C0 60              	   338: 	rts
+                        	   339: 
+                        	   340: lcd_wait:
+00:12C1 A900            	   341:     lda #$00
+00:12C3 853D            	   342:     sta delay1
+00:12C5 853E            	   343:     sta delay2
+00:12C7 A9F0            	   344:     lda #%11110000 ; set db7-4 pin to input - connected to low 4 bits
+00:12C9 8D02C0          	   345:     sta ddrb
+                        	   346: lcd_wait_loop:
+00:12CC C63D            	   347:     dec delay1
+00:12CE F017            	   348:     beq lcd_wait_exit:	; bail out if 256 times
+00:12D0 A910            	   349:     lda #RW 	; read busy flag
+00:12D2 8D00C0          	   350:     sta prtb
+00:12D5 A950            	   351:     lda #(RW | E)
+00:12D7 8D00C0          	   352:     sta prtb
+00:12DA A910            	   353:     lda #RW
+00:12DC 8D00C0          	   354:     sta prtb
+00:12DF EA              	   355:     nop
+00:12E0 AD00C0          	   356:     lda prtb	
+00:12E3 2908            	   357:     and #%00001000 ; check if zero
+00:12E5 D0E5            	   358:     bne lcd_wait_loop
+                        	   359: lcd_wait_exit:
+00:12E7 A9FF            	   360:     lda #%11111111 ; return to all output
+00:12E9 8D02C0          	   361:     sta ddrb
+00:12EC 60              	   362:     rts
+                        	   363: 
+                        	   364: delay:
+00:12ED 853D            	   365:     sta delay1
+00:12EF 853E            	   366:     sta delay2
+                        	   367: delay_loop:
+00:12F1 C63D            	   368:     dec delay1
+00:12F3 D0FC            	   369:     bne delay_loop
+00:12F5 C63E            	   370:     dec delay2
+00:12F7 D0F8            	   371:     bne delay_loop
+00:12F9 60              	   372:     rts 
+                        	   373: 
+                        	   374: 
+
+
+Symbols by name:
+E                                E:0040
+RW                               E:0010
+ddrb                             E:C002
+delay                            A:12ED
+delay1                           E:003D
+delay2                           E:003E
+delay_loop                       A:12F1
+k1                               A:1098
+k2                               A:109A
+lcd_wait                         A:12C1
+lcd_wait_exit                    A:12E7
+lcd_wait_loop                    A:12CC
+prtb                             E:C000
+reset                            A:1000
+
+Symbols by value:
+0010 RW
+003D delay1
+003E delay2
+0040 E
+1000 reset
+1098 k1
+109A k2
+12C1 lcd_wait
+12CC lcd_wait_loop
+12E7 lcd_wait_exit
+12ED delay
+12F1 delay_loop
+C000 prtb
+C002 ddrb

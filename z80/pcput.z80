@@ -1,0 +1,327 @@
+;
+;  PCPUT - This CP/M program sends a file from the CP/M machine to a PC using
+;	a serial port. The file transfer uses the XMODEM protocol. 
+;
+;  Note this program is gutted from the Ward Christenson Modem program.
+;
+;  Hacked together by Mike Douglas for the Altair 2SIO serial interface board.
+;	Ver	Date	Desc
+;	1.0    	11/8/12		Initial version
+;	1.1    	2/20/14  	Allow transfer to occur over 2SIO port B
+;	1.2   	12/21/14  	Support CRC as well as checksum
+;	1.3   	10/16/15	Set initial CRC flag state in software. Was
+;				previously random from load.
+;	2.0	5/11/2017 	Update for CPUVille system
+;
+;  Serial Port Equates
+SIOACR	.EQU	003H		;2SIO port A control register
+SIOADR	.EQU	002H		;2SIO port A data register
+SIOBCR	.EQU	012H		;2SIO port B control register
+SIOBDR	.EQU	013H		;2SIO port B data register
+XMTMASK	.EQU	1		;MASK TO GET XMIT READY BIT
+XMTRDY	.EQU	1		;VALUE WHEN READY
+RCVMASK	.EQU	2		;MASK TO GET RECEIVE DATA AVAILABLE
+RCVRDY	.EQU	2		;BIT ON WHEN READY
+ERRLMT	.EQU	5		;MAX ALLOWABLE ERRORS
+;DEFINE ASCII CHARACTERS USED
+SOH	.EQU	1
+EOT	.EQU	4
+ACK	.EQU	6
+NAK	.EQU	15H
+CTRLC	.EQU	3		;Control-C
+LF	.EQU	10
+CR	.EQU	13
+	.ORG	100h
+;  Verify a file name was specified
+	ld a,(PARAM1)		;A=1st character of parameter 1
+	cp a,' '		;make sure something entered
+	jp nz,doXfer		;-found
+	ld de,mHelp		;display usage message
+	ld c,PRINT
+	call BDOS
+	ret			;return to CPM
+	
+;  doXfer - Switch to local stack and do the transfer
+doXfer:
+	ld hl,0		;HL=0
+	add hl,sp		;HL=STACK FROM CP/M
+	ld (STACK),hl		;..SAVE IT
+	ld sp,STACK	;SP=MY STACK
+	xor a,a		
+	ld (SECTNO),a		;initialize sector number to zero
+	call OPEN_FILE	;OPEN THE FILE
+	call INIT_ACIA	;MASTER RESET THE ACIA
+	ld de,mRcvA		;assume using port A
+sendA	ld c,PRINT
+	call BDOS		;PRINT ID MESSAGE
+;  GOBBLE UP GARBAGE CHARS FROM THE LINE
+purge	ld b,1		;times out after 1 second if no data
+	call RECV
+	jp c,lineClr		;line is clear, go wait for initial NAK
+	cp a,CTRLC		;exit if abort requested
+	jp z,abort
+	 jp purge
+; WAIT FOR INITIAL NAK, THEN SEND THE FILE
+	
+lineClr	xor a,a		;clear crc flag = checksum mode
+	ld (crcFlag),a
+WAITNAK	ld b,1		;TIMEOUT DELAY
+	call RECV
+	jp c,WAITNAK
+	cp a,CTRLC		;abort requested?
+	jp z,abort
+	cp a,NAK		;NAK RECEIVED?
+	jp z,SENDB		;yes, send file in checksum mode
+	cp a,'C'		;'C' for CRC mode received?
+	jp nz,WAITNAK		;no, keep waiting
+	ld (crcFlag),a		;set CRC flag non-zero = true
+				;fall through to start the send operation
+;
+;*****************SEND A FILE***************
+;
+;READ SECTOR, SEND IT
+SENDB	call READ_SECTOR
+	ld a,(SECTNO)		;INCR SECT NO.
+	inc a
+	ld (SECTNO),a
+;SEND OR REPEAT SECTOR
+REPTB	ld a,SOH
+	call SEND
+	ld a,(SECTNO)
+	call SEND
+	ld a,(SECTNO)
+	cpl
+	call SEND
+	ld hl,0		;init crc to zero
+	ld (crc16),hl
+	ld c,h		;init checksum in c to zero
+	ld hl,80H
+SENDC	ld a,(hl)
+	call SEND
+	call calCrc		;update CRC
+	inc hl
+	ld a,h
+	cp a,1		;DONE WITH SECTOR?
+	jp nz,SENDC
+; Send checksum or CRC based on crcFlag
+	ld a,(crcFlag)		;crc or checksum?
+	or a,a
+	jp z,sndCsum		;flag clear = checksum
+	ld a,(crc16+1)		;a=high byte of CRC
+	call SEND		;send it
+	ld a,(crc16)		;a=low byte of crc
+	 jp sndSkip		;skip next instruction	
+sndCsum	ld a,c		;send the checksum byte
+sndSkip	call SEND
+;GET ACK ON SECTOR
+	ld b,4		;WAIT 4 SECONDS MAX
+	call RECV
+	jp c,REPTB		;TIMEOUT, SEND AGAIN
+;NO TIMEOUT SENDING SECTOR
+	cp a,ACK		;ACK RECIEVED?
+	jp z,SENDB		;..YES, SEND NEXT SECT
+	cp a,CTRLC		;control-c to abort?
+	jp z,abort
+	 jp REPTB		;PROBABLY NAK - TRY AGAIN
+;
+;
+; S U B R O U T I N E S
+;
+;OPEN FILE
+OPEN_FILE ld de,FCB
+	ld c,OPEN
+	call BDOS
+	inc a		;OPEN OK?
+	ret nz			;GOOD OPEN
+	call ERXIT
+	.DB	13,10,"Cannot Open File",13,10,'$'
+; - - - - - - - - - - - - - - -
+;EXIT PRINTING MESSAGE FOLLOWING 'CALL ERXIT'
+ERXIT	pop de		;GET MESSAGE
+	ld c,PRINT
+	call BDOS		;PRINT MESSAGE
+EXIT	ld hl,(STACK)		;GET ORIGINAL STACK
+	ld sp,hl			;RESTORE IT
+;	RET			;--EXIT-- TO CP/M
+	 jp 0
+; - - - - - - - - - - - - - - -
+;MODEM RECV
+;-------------------------------------
+RECV	push de		;SAVE
+MSEC	
+;	LXI	D,(159 shl 8)	;49 cycle loop, 6.272ms/wrap * 159 = 1 second
+	ld de,09F00H	;49 cycle loop, 6.272ms/wrap * 159 = 1 second
+;  port A input
+MWTI	in a,(SIOACR)
+	and a,RCVMASK
+	cp a,RCVRDY
+	jp z,MCHAR		;GOT CHAR
+	dec e		;COUNT DOWN
+	jp nz,MWTI		;FOR TIMEOUT
+	dec d
+	jp nz,MWTI
+	dec b		;DCR # OF SECONDS
+	jp nz,MSEC
+;MODEM TIMED OUT RECEIVING
+	pop de		;RESTORE D,E
+	scf			;CARRY SHOWS TIMEOUT
+	ret
+;GOT MODEM CHAR
+MCHAR	in a,(SIOADR)
+	pop de		;RESTORE DE
+	push af		;CALC CHECKSUM
+	add a,c
+	ld c,a
+	pop af
+	or a,a		;TURN OFF CARRY TO SHOW NO TIMEOUT
+	ret
+;GOT MODEM CHAR
+MCHARB	in a,(SIOBDR)
+	pop de		;RESTORE DE
+	push af		;CALC CHECKSUM
+	add a,c
+	ld c,a
+	pop af
+	or a,a		;TURN OFF CARRY TO SHOW NO TIMEOUT
+	ret
+; - - - - - - - - - - - - - - -
+;MODEM SEND CHAR ROUTINE
+;----------------------------------
+;
+SEND	push af		;CHECK IF MONITORING OUTPUT
+	add a,c		;CALC CKSUM
+	ld c,a
+; Use port A
+SENDW	in a,(SIOACR)
+	and a,XMTMASK
+	cp a,XMTRDY
+	jp nz,SENDW
+	pop af		;GET CHAR
+	out (SIOADR),a
+	ret
+; INITITIALIZE THE SERIAL PORT
+INIT_ACIA:
+;	mvi	a,003h		;don't reset console port
+;	out	SIOACR
+	ld a,015h		;rts on, 8N1
+	out (SIOACR),a
+	ret
+;
+;FILE READ ROUTINE
+;
+READ_SECTOR:
+	ld de,FCB
+	ld c,READ
+	call BDOS
+	or a,a
+	ret z
+	dec a		;EOF?
+	jp nz,RDERR
+;EOF
+	xor a,a
+	ld (ERRCT),a
+SEOT	ld a,EOT
+	call SEND
+	ld b,3		;WAIT 3 SEC FOR TIMEOUT
+	call RECV
+	jp c,EOTTOT		;EOT TIMEOUT
+	cp a,ACK
+	jp z,XFER_CPLT
+;ACK NOT RECIEVED
+EOTERR	ld a,(ERRCT)
+	inc a
+	ld (ERRCT),a
+	cp a,ERRLMT
+	jp c,SEOT
+	call ERXIT
+	.db	13,10,10
+	.db	"No ACK received on EOT, "
+	.db	"but transfer is complete.",13,10,'$'
+;
+;TIMEOUT ON EOT
+;
+EOTTOT	 jp EOTERR
+;
+;READ ERROR
+;
+RDERR	call ERXIT
+	.DB	13,10,"File Read Error",13,10,'$'
+;DONE - CLOSE UP SHOP
+XFER_CPLT:
+	call ERXIT
+	.DB	13,10,10,"Transfer Complete",13,10,'$'
+abort	call ERXIT
+	.DB	13,10,10,"Transfer Aborted",13,10,'$'
+;-----------------------------------------------------------------------------
+; calCrc - update the 16-bit CRC with one more byte. 
+;    (Copied from M. Eberhard)
+; On Entry:
+;   a has the new byte
+;   crc16 is current except this byte
+; On Exit:
+;   crc16 has been updated
+;   Trashes a,de
+;-----------------------------------------------------------------------------
+calCrc	push bc		;save bc, hl
+	push hl
+	ld hl,(crc16)		;get CRC so far
+	xor a,h		;XOR into CRC top byte
+	ld h,a
+	ld bc,1021h		;bc=CRC16 polynomial
+	ld d,8		;prepare to rotate 8 bits
+; do 8 bit shift/divide by CRC polynomial
+cRotLp	add hl,hl		;16-bit shift
+	jp nc,cClr		;skip if bit 15 was 0
+	ld a,h		;CRC=CRC xor 1021H
+	xor a,b
+	ld h,a
+	ld a,l
+	xor a,c
+	ld l,a
+cClr	dec d
+	jp nz,cRotLp		;rotate 8 times
+; save the updated CRC and exit
+	ld (crc16),hl		;save updated CRC
+	pop hl		;restore hl, bc
+	pop bc
+	ret
+; Messages
+mRcvA	.db	"Start XMODEM file "
+	.db	"receive now...",'$'
+mHelp	.db	CR,LF,"PCPUT 2.0 for CPUVille",CR,LF,LF
+	.db	"Transmits a file to a "
+	.db	"PC through an 88-2SIO",CR,LF
+	.db	"serial port using the "
+	.db	"XMODEM protocol.",CR,LF,LF
+	.db	"Usage: PCPUT file.ext"
+	.db	'$'
+; Data area
+	.DS	40	;STACK AREA
+STACK	.DS	2	;STACK POINTER
+SECTNO	.DS	1	;CURRENT SECTOR NUMBER 
+ERRCT	.DS	1	;ERROR COUNT
+crcFlag	.ds	1	;non-zero if using CRC
+crc16	.ds	2	;computed crc
+;
+; BDOS EQUATES (VERSION 2)
+;
+RDCON	.EQU	1
+WRCON	.EQU	2
+PRINT	.EQU	9
+CONST	.EQU	11	;CONSOLE STAT
+OPEN	.EQU	15	;0FFH=NOT FOUND
+CLOSE	.EQU	16	;   "	"
+SRCHF	.EQU	17	;   "	"
+SRCHN	.EQU	18	;   "	"
+ERASE	.EQU	19	;NO RET CODE
+READ	.EQU	20	;0=OK, 1=EOF
+WRITE	.EQU	21	;0=OK, 1=ERR, 2=?, 0FFH=NO DIR SPC
+MAKE	.EQU	22	;0FFH=BAD
+REN	.EQU	23	;0FFH=BAD
+STDMA	.EQU	26
+BDOS	.EQU	5
+REIPL	.EQU	0
+FCB	.EQU	5CH	;SYSTEM FCB
+PARAM1	.EQU	FCB+1	;COMMAND LINE PARAMETER 1 IN FCB
+PARAM2	.EQU	PARAM1+16	;COMMAND LINE PARAMETER 2
+	.END

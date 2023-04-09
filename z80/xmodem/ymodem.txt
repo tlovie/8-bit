@@ -1,0 +1,15 @@
+	Receiver:	send NAK to start transfer
+Sender: sends 0 block with file name information
+	Receiver:	SEND ACK to acknowledge file name
+	Receiver: 	send NAK to start transfer of file
+Sender sends 1 block with data
+	Receiver:	send ACK if good
+			send NAK if bad
+Sender: either sends 2 block or resends 2 block
+	receiver: sends ACK 
+sender: sends EOT to indicate end of tranmission
+	Receiver: sends NAK to acknowledge EOT
+Sender: sends EOT again to indicate end of transmission
+	Receiver sends ACK to acknowledge EOT
+Sender: sends 0 block for next file with all NUL [00] to indicate no more
+	Receiver: sends ACK

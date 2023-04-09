@@ -1,0 +1,56 @@
+
+
+
+
+	For all you 8080 users, this program is in 8080 code.
+
+	EXTRACT is a program that allows a person to down load a  '.LBR' 
+file  in  its  entirety and then extract any part or all of it at his 
+leisure.  One of the problems I encountered was down  loading  files, 
+then  missing  a critical one. I currently am running 8 floppy drives 
+and four hardisks, which created the necessity of extracting files to 
+different  user  numbers as well as different drives.  EXTRACT allows 
+this from the command line. The format is  the  same  that  Compuview 
+uses in the "VPLUS" editor.
+
+	EXTRACT  has  a  built  in  help  function,  to  use  just enter 
+"EXTRACT" and this will bring up the help menu.
+
+	The format for the command is drive  colon,  library  file  name 
+with  an  optional  extent. If a extent isn't entered, the default is 
+".LBR". If the library file is under a different  user,  right  after 
+the  filename  enter  "=X" where "X" is the user number. Note, do not 
+enter a space after the file name. When the  library  file  names  is 
+entered,  enter a space, followed by the optional drive name that the 
+files will go to, followed with the file  name  and  extension.   The 
+filename  and  extension  can  be  any  valid  CP/M  filename  entry, 
+including wildcards. After this is entered, you can enter an optional 
+"=X" which will send the output to user number "X".
+
+	At  the  beginning  of  EXTRACT  at  location 103H is a flag for 
+automatic erasure of an existing output file. If this flag  is  equal 
+to  a  non  zero  value,  the file will be automatically erased if it 
+exists before the file is extracted. If this flag is equal  to  zero, 
+you  will  be prompted before the file is erased. If you elect not to 
+erase the file, the file will not be extracted from the library.
+
+	AT location 104H in extract is the verbose flag. If this is  set 
+to zero progress messages will be displayed as EXTRACT is running.
+
+	This  program  is  free  for  anybody  to use, but it is not for 
+resale.  There is a trap in the program,  if  the  copyright  message 
+doesn't  match  the hidden one, EXTRACT will destroy itself. Just for 
+information purposes part of  the  message  is  executed  during  the 
+extraction  of each file. There is a lot of error checking, so only a 
+deliberate changing of the copyright messages will cause this trap.
+
+ 	If any  problems occur, leave  a  message  under  a  file  named 
+"HELP.GIL"  and  I  will  try  to correct the problems.  Note EXTRACT 
+signs on  with  a  version  number  as  well  as  date  and  time  of 
+compulation.   So   when  entering  problems,  include  the  version, 
+revision, date, and time.
+
+Enjoy;
+
+Gil Shultz
+

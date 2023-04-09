@@ -1,0 +1,146 @@
+; this program implements the sieve of eratosthenes on the z80 
+monitor:	equ	046fh
+cpm:		equ	0fa00h
+data_start:	equ	1000h
+data_end:	equ 	3000h
+current_location:	equ	0x3000		;word variable in RAM
+line_count:		equ	0x3002		;byte variable in RAM
+byte_count:		equ	0x3003		;byte variable in RAM
+value_pointer:		equ	0x3004		;word variable in RAM
+current_value:		equ	0x3006		;word variable in RAM
+buffer:			equ	0x3008		;buffer in RAM -- up to stack area
+
+org 0100h  ; set origin of execution
+; data segment at 1000h
+	ld de,data_start
+	ld a,00h
+zero_loop:
+	ld (de),a
+	inc de
+	ld hl,data_end
+	sbc hl,de
+	jp nz,zero_loop
+
+	ld hl,data_start
+	call write_newline
+	call memory_dump
+
+;	out (1),a	; switch to RAM monitor
+;	jp cpm
+	ret
+;
+;Memory dump
+;Displays a 256-byte block of memory in 16-byte rows.
+;Called with address of start of block in HL
+memory_dump:		ld	(current_location),hl	;store address of block to be displayed
+			ld	a,000h
+			ld	(byte_count),a		;initialize byte count
+			ld	(line_count),a		;initialize line count
+			jp	dump_new_line
+dump_next_byte:		ld	hl,(current_location)	;get byte address from storage,
+			ld	a,(hl)			;get byte to be converted to string
+			inc	hl			;increment address and
+			ld	(current_location),hl	;store back
+			ld	hl,buffer		;location to store string
+			call	byte_to_hex_string	;convert
+			ld	hl,buffer		;display string
+			call	write_string
+			ld	a,(byte_count)		;next byte
+			inc	a
+			jp	z,dump_done		;stop when 256 bytes displayed
+			ld	(byte_count),a		;not finished yet, store
+			ld	a,(line_count)		;end of line (16 characters)?
+			cp	00fh			;yes, start new line
+			jp	z,dump_new_line
+			inc	a			;no, increment line count
+			ld	(line_count),a
+			ld	a,020h			;print space
+			call	write_char
+			jp	dump_next_byte		;continue
+dump_new_line:		ld	a,000h			;reset line count to zero
+			ld	(line_count),a			
+			call	write_newline
+			ld	hl,(current_location)	;location of start of line
+			ld	a,h			;high byte of address
+			ld	hl, buffer
+			call	byte_to_hex_string	;convert
+			ld	hl,buffer
+			call	write_string		;write high byte
+			ld	hl,(current_location)
+			ld	a,l			;low byte of address
+			ld	hl, buffer
+			call	byte_to_hex_string	;convert
+			ld	hl,buffer
+			call	write_string		;write low byte
+			ld	a,020h			;space
+			call	write_char
+			jp	dump_next_byte		;now write 16 bytes
+dump_done:		ld	a,000h
+			ld	hl,buffer
+			ld	(hl),a			;clear buffer of last string
+			call	write_newline
+			ret
+;
+;Creates a two-char hex string from the byte value passed in register A
+;Location to place string passed in HL
+;String is zero-terminated, stored in 3 locations starting at HL
+;Also uses registers b,d, and e
+byte_to_hex_string:	ld	b,a			;store original byte
+			srl	a			;shift right 4 times, putting
+			srl	a			;high nybble in low-nybble spot
+			srl	a			;and zeros in high-nybble spot
+			srl	a
+			ld	d,000h			;prepare for 16-bit addition
+			ld	e,a			;de contains offset
+			push	hl			;temporarily store string target address
+			ld	hl,hex_char_table	;use char table to get high-nybble character
+			add	hl,de			;add offset to start of table
+			ld	a,(hl)			;get char
+			pop	hl			;get string target address
+			ld	(hl),a			;store first char of string
+			inc	hl			;point to next string target address
+			ld	a,b			;get original byte back from reg b
+			and	00fh			;mask off high-nybble
+			ld	e,a			;d still has 000h, now de has offset
+			push	hl			;temp store string target address
+			ld	hl,hex_char_table	;start of table
+			add	hl,de			;add offset
+			ld	a,(hl)			;get char
+			pop	hl			;get string target address
+			ld	(hl),a			;store second char of string
+			inc	hl			;point to third location
+			ld	a,000h			;zero to terminate string
+			ld	(hl),a			;store the zero
+			ret				;done
+;
+;Subroutine to start a new line
+write_newline:		ld	a,00dh			;ASCII carriage return character
+			call	write_char
+			ld	a,00ah			;new line (line feed) character
+			call	write_char
+			ret
+;
+;Puts a single char (byte value) on serial output
+;Call with char to send in A register. Uses B register
+write_char:		ld	b,a			;store char
+write_char_loop:	in	a,(3)			;check if OK to send
+			and	001h			;check TxRDY bit
+			jp 	z,write_char_loop	;loop if not set
+			ld 	a,b			;get char back
+			out 	(2),a			;send to output
+			ret				;returns with char in a
+;
+;Subroutine to write a zero-terminated string to serial output
+;Pass address of string in HL register
+;No error checking
+write_string:		in 	a,(3)			;read status
+			and 	001h			;check TxRDY bit
+			jp 	z,write_string		;loop if not set
+			ld 	a,(hl)			;get char from string
+			and 	a			;check if 0
+			ret 	z			;yes, finished
+			out 	(2),a			;no, write char to output
+			inc 	hl			;next char in string
+			jp 	write_string		;start over
+hex_char_table:		defm	"0123456789ABCDEF"	;ASCII hex table
+	end
