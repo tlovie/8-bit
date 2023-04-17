@@ -8,21 +8,25 @@ divisor		equ	$14
 remainder	equ 	$16
 dividend10	equ 	$20
 ptr		equ	$24
+ptr2		equ 	$26
 
 
-	org $1000
+	org $0800
 
 main:	
 	lda #$20
+	sta ptr2+1
+	lda #$10
 	sta ptr+1		; set the page for storing primes	
+	lda #0
+	sta ptr
+	sta ptr2
+	tay
+	sta q+1
 	lda #5
 	sta q		; start q loop at 5
 	lda #3
 	sta dmax
-	lda #0
-	sta ptr
-	tay		; using for pointer of primes
-	sta q+1
 q_loop:			; q is 16 bits here
 	lda #3
 	sta d		; init d loop
@@ -32,11 +36,12 @@ q_loop:			; q is 16 bits here
 	jsr mul16
 	sta mult2	; store a here 
 	stx mult1	; store x here		
-	lda q		; compute q-dmax*dmax
-	sbc mult1
-	lda q+1
-	sbc mult2	; need dmax*dmax >=q
-	bmi d_loop
+        clc
+	lda mult1	; compute dmax*dmax - q
+	sbc q
+	lda mult1
+	sbc q+1		; need dmax*dmax - q >= 0
+	bcs d_loop
 	inc dmax
 d_loop:	
 	lda q
@@ -51,10 +56,12 @@ d_loop:
 	clc
 	lda #02
 	adc d
+	bcs prime	; if we are going to overflow d means we are done
 	sta d
+	clc
 	lda dmax
 	sbc d
-	bpl d_loop
+	bcc d_loop
 prime:
 	lda q
 	sta (ptr),y
@@ -69,9 +76,9 @@ composite:	; we had a remainder of zero, therefore the number is composite
 	clc
 	adc q
 	sta q
-	lda #0
-	adc q+1
-	sta q+1
+	;lda #0
+	;adc q+1
+	;sta q+1
 	bcc q_loop	; continue on if not overflow 16 bit
 
 	rts

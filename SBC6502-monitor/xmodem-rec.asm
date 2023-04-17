@@ -107,8 +107,6 @@ ESC		=	$1b		; ESC to exit
 ; v 1.0 recode for use with SBC2
 ; v 1.1 added block 1 masking (block 257 would be corrupted)
 
-;		*= 	$7B00		; Start of program (adjust to your needs)
-;
 XModem		jsr	MAKECRCTABLE	; make the CRC table
 		jsr	PrintMsg	; send prompt and info
 		lda	#$01
@@ -244,7 +242,7 @@ PrtMsg1		lda   	Msg,x
 		inx
 		bne	PrtMsg1
 PrtMsg2		rts
-Msg		.byte	"Begin XMODEM/CRC transfer.  Press <Esc> to abort..."
+Msg		.byte	"X/CRC. <Esc> to quit."
 		.BYTE  	CR, LF
                	.byte   0
 ;
@@ -255,7 +253,7 @@ PrtErr1		lda   	ErrMsg,x
 		inx
 		bne	PrtErr1
 PrtErr2		rts
-ErrMsg		.byte 	"Upload Error!"
+ErrMsg		.byte 	"Upl Err!"
 		.BYTE  	CR, LF
                 .byte   0
 ;
@@ -266,7 +264,7 @@ Prtgood1	lda   	GoodMsg,x
 		inx
 		bne	Prtgood1
 Prtgood2	rts
-GoodMsg		.byte 	"Upload Successful!"
+GoodMsg		.byte 	"Upl OK!"
 		.BYTE  	CR, LF
                 .byte   0
 ;
@@ -295,7 +293,7 @@ UpdCrc		eor 	crc+1 		; Quick CRC computation with lookup tables
 ;
 MAKECRCTABLE
 		ldx 	#$00
-		LDA	#$00
+		txa
 zeroloop	sta 	crclo,x
 		sta 	crchi,x
 		inx

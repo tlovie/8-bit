@@ -1,5 +1,5 @@
 Sections:
-00: "seg1000" (1000-10E5)
+00: "seg800" (800-8E3)
 
 
 Source: "prime.s"
@@ -15,188 +15,191 @@ Source: "prime.s"
                         	    10: ptr		equ	$24
                         	    11: 
                         	    12: 
-                        	    13: 	org $1000
+                        	    13: 	org $0800
                         	    14: 
                         	    15: main:	
-00:1000 A920            	    16: 	lda #$20
-00:1002 8525            	    17: 	sta ptr+1		; set the page for storing primes	
-00:1004 A905            	    18: 	lda #5
-00:1006 8500            	    19: 	sta q		; start q loop at 5
-00:1008 A903            	    20: 	lda #3
-00:100A 8506            	    21: 	sta dmax
-00:100C A900            	    22: 	lda #0
-00:100E 8524            	    23: 	sta ptr
-00:1010 A8              	    24: 	tay		; using for pointer of primes
-00:1011 8501            	    25: 	sta q+1
+00:0800 A910            	    16: 	lda #$10
+00:0802 8525            	    17: 	sta ptr+1		; set the page for storing primes	
+00:0804 A900            	    18: 	lda #0
+00:0806 8524            	    19: 	sta ptr
+00:0808 A8              	    20: 	tay
+00:0809 8501            	    21: 	sta q+1
+00:080B A905            	    22: 	lda #5
+00:080D 8500            	    23: 	sta q		; start q loop at 5
+00:080F A903            	    24: 	lda #3
+00:0811 8506            	    25: 	sta dmax
                         	    26: q_loop:			; q is 16 bits here
-00:1013 A903            	    27: 	lda #3
-00:1015 8504            	    28: 	sta d		; init d loop
-00:1017 A506            	    29: 	lda dmax	; figure out if dmax * dmax > q
-00:1019 8508            	    30: 	sta mult1
-00:101B 8518            	    31: 	sta mult2
-00:101D 20D210          	    32: 	jsr mul16
-00:1020 8518            	    33: 	sta mult2	; store a here 
-00:1022 8608            	    34: 	stx mult1	; store x here		
-00:1024 A500            	    35: 	lda q		; compute q-dmax*dmax
-00:1026 E508            	    36: 	sbc mult1
-00:1028 A501            	    37: 	lda q+1
-00:102A E518            	    38: 	sbc mult2	; need dmax*dmax >=q
-00:102C 3002            	    39: 	bmi d_loop
-00:102E E606            	    40: 	inc dmax
-                        	    41: d_loop:	
-00:1030 A500            	    42: 	lda q
-00:1032 8510            	    43: 	sta dividend
-00:1034 A501            	    44: 	lda q+1
-00:1036 8511            	    45: 	sta dividend+1
-00:1038 A504            	    46: 	lda d
-00:103A 8514            	    47: 	sta divisor
-00:103C 206E10          	    48: 	jsr div16	; divide q by d, remainder in a
-00:103F C900            	    49: 	cmp #0
-00:1041 F01B            	    50: 	beq composite
-00:1043 18              	    51: 	clc
-00:1044 A902            	    52: 	lda #02
-00:1046 6504            	    53: 	adc d
-00:1048 8504            	    54: 	sta d
-00:104A A506            	    55: 	lda dmax
-00:104C E504            	    56: 	sbc d
-00:104E 10E0            	    57: 	bpl d_loop
-                        	    58: prime:
-00:1050 A500            	    59: 	lda q
-00:1052 9124            	    60: 	sta (ptr),y
-00:1054 C8              	    61: 	iny
-00:1055 A501            	    62: 	lda q+1
-00:1057 9124            	    63: 	sta (ptr),y
-00:1059 C8              	    64: 	iny
-00:105A D002            	    65: 	bne composite
-00:105C E625            	    66: 	inc ptr+1	; move to next page if y=0
-                        	    67: composite:	; we had a remainder of zero, therefore the number is composite
-00:105E A902            	    68: 	lda #2	; increment q
-00:1060 18              	    69: 	clc
-00:1061 6500            	    70: 	adc q
-00:1063 8500            	    71: 	sta q
-00:1065 A900            	    72: 	lda #0
-00:1067 6501            	    73: 	adc q+1
-00:1069 8501            	    74: 	sta q+1
-00:106B 90A6            	    75: 	bcc q_loop	; continue on if not overflow 16 bit
-                        	    76: 
-00:106D 60              	    77: 	rts
-                        	    78: 
-                        	    79: ; 16 bit divide wit 8 bit quotient - result in dividend
-                        	    80: div16:
-00:106E A900            	    81: 	lda #0
-00:1070 8516            	    82: 	sta remainder
-00:1072 A210            	    83: 	ldx #16
-                        	    84: div16loop:
-00:1074 0610            	    85: 	asl dividend
-00:1076 2611            	    86: 	rol dividend+1
-00:1078 2616            	    87: 	rol remainder
-00:107A A516            	    88: 	lda remainder
-00:107C 38              	    89: 	sec
-00:107D E514            	    90: 	sbc divisor
-00:107F 9004            	    91: 	bcc div16_skip
-00:1081 8516            	    92: 	sta remainder
-00:1083 E610            	    93: 	inc dividend
-                        	    94: div16_skip:
-00:1085 CA              	    95: 	dex
-00:1086 D0EC            	    96: 	bne div16loop
-00:1088 60              	    97: 	rts
-                        	    98: 
-                        	    99: ; 32 bit divide with 16 bit quotient
-                        	   100: div32:
-00:1089 A900            	   101: 	lda #0
-00:108B 8516            	   102: 	sta remainder
-00:108D 8517            	   103: 	sta remainder+1
-00:108F A220            	   104: 	ldx #32
-                        	   105: div32loop:
-00:1091 0610            	   106: 	asl dividend	; dividend *2, msb -> carry
-00:1093 2611            	   107: 	rol dividend+1
-00:1095 2612            	   108: 	rol dividend+2
-00:1097 2613            	   109: 	rol dividend+3
-00:1099 2616            	   110: 	rol remainder	; remainder *2 + msb from carry
-00:109B 2617            	   111: 	rol remainder+1
-00:109D A516            	   112: 	lda remainder
-00:109F 38              	   113: 	sec
-00:10A0 E514            	   114: 	sbc divisor	; subtract divisor to see if it fits in
-00:10A2 A8              	   115: 	tay		; lb -> y, for we may need it later
-00:10A3 A517            	   116: 	lda remainder+1
-00:10A5 E515            	   117: 	sbc divisor+1	; hb in a
-00:10A7 9006            	   118: 	bcc div32_skip
-00:10A9 8517            	   119: 	sta remainder+1
-00:10AB 8416            	   120: 	sty remainder
-00:10AD E610            	   121: 	inc dividend	; result in dividend 2 low bytes
-                        	   122: div32_skip:
-00:10AF CA              	   123: 	dex
-00:10B0 D0DF            	   124: 	bne div32loop
-00:10B2 60              	   125: 	rts
-                        	   126: 
-                        	   127: ; 32 bit divide by 10
-                        	   128: div32_10:
-00:10B3 A900            	   129: 	lda #0
-00:10B5 8516            	   130: 	sta remainder
-00:10B7 A220            	   131: 	ldx #32
-                        	   132: div32_10_loop:
-00:10B9 0620            	   133: 	asl dividend10	; dividend *2, msb -> carry
-00:10BB 2621            	   134: 	rol dividend10+1
-00:10BD 2622            	   135: 	rol dividend10+2
-00:10BF 2623            	   136: 	rol dividend10+3
-00:10C1 2616            	   137: 	rol remainder	; remainder *2 + msb from carry
-00:10C3 A516            	   138: 	lda remainder
-00:10C5 38              	   139: 	sec
-00:10C6 E90A            	   140: 	sbc #10		; subtract divisor to see if it fits in
-00:10C8 9004            	   141: 	bcc div32_10_skip
-00:10CA 8516            	   142: 	sta remainder
-00:10CC E610            	   143: 	inc dividend	; result in dividend 2 low bytes
-                        	   144: div32_10_skip:
-00:10CE CA              	   145: 	dex
-00:10CF D0E8            	   146: 	bne div32_10_loop
-00:10D1 60              	   147: 	rts
-                        	   148: 
-                        	   149: ; multiplication routine
-                        	   150: ; factors in mult1 and mult2
-                        	   151: ; result is A * 256 + X (AX)
-                        	   152: mul16:
-00:10D2 A900            	   153: 	lda #$00
-00:10D4 A208            	   154: 	ldx #$08
-00:10D6 18              	   155: 	clc
-00:10D7 9003            	   156: mul16_1:bcc mul16_2
-00:10D9 18              	   157: 	clc
-00:10DA 6518            	   158: 	adc mult2
-00:10DC 6A              	   159: mul16_2:ror
-00:10DD 6608            	   160: 	ror mult1
-00:10DF CA              	   161: 	dex
-00:10E0 10F5            	   162: 	bpl mul16_1
-00:10E2 A608            	   163: 	ldx mult1
-00:10E4 60              	   164: 	rts
-                        	   165: 
+00:0813 A903            	    27: 	lda #3
+00:0815 8504            	    28: 	sta d		; init d loop
+00:0817 A506            	    29: 	lda dmax	; figure out if dmax * dmax > q
+00:0819 8508            	    30: 	sta mult1
+00:081B 8518            	    31: 	sta mult2
+00:081D 20D008          	    32: 	jsr mul16
+00:0820 8518            	    33: 	sta mult2	; store a here 
+00:0822 8608            	    34: 	stx mult1	; store x here		
+00:0824 18              	    35:         clc
+00:0825 A508            	    36: 	lda mult1	; compute dmax*dmax - q
+00:0827 E500            	    37: 	sbc q
+00:0829 A508            	    38: 	lda mult1
+00:082B E501            	    39: 	sbc q+1		; need dmax*dmax - q >= 0
+00:082D B002            	    40: 	bcs d_loop
+00:082F E606            	    41: 	inc dmax
+                        	    42: d_loop:	
+00:0831 A500            	    43: 	lda q
+00:0833 8510            	    44: 	sta dividend
+00:0835 A501            	    45: 	lda q+1
+00:0837 8511            	    46: 	sta dividend+1
+00:0839 A504            	    47: 	lda d
+00:083B 8514            	    48: 	sta divisor
+00:083D 206C08          	    49: 	jsr div16	; divide q by d, remainder in a
+00:0840 C900            	    50: 	cmp #0
+00:0842 F01E            	    51: 	beq composite
+00:0844 18              	    52: 	clc
+00:0845 A902            	    53: 	lda #02
+00:0847 6504            	    54: 	adc d
+00:0849 B009            	    55: 	bcs prime	; if we are going to overflow d means we are done
+00:084B 8504            	    56: 	sta d
+00:084D 18              	    57: 	clc
+00:084E A506            	    58: 	lda dmax
+00:0850 E504            	    59: 	sbc d
+00:0852 90DD            	    60: 	bcc d_loop
+                        	    61: prime:
+00:0854 A500            	    62: 	lda q
+00:0856 9124            	    63: 	sta (ptr),y
+00:0858 C8              	    64: 	iny
+00:0859 A501            	    65: 	lda q+1
+00:085B 9124            	    66: 	sta (ptr),y
+00:085D C8              	    67: 	iny
+00:085E D002            	    68: 	bne composite
+00:0860 E625            	    69: 	inc ptr+1	; move to next page if y=0
+                        	    70: composite:	; we had a remainder of zero, therefore the number is composite
+00:0862 A902            	    71: 	lda #2	; increment q
+00:0864 18              	    72: 	clc
+00:0865 6500            	    73: 	adc q
+00:0867 8500            	    74: 	sta q
+                        	    75: 	;lda #0
+                        	    76: 	;adc q+1
+                        	    77: 	;sta q+1
+00:0869 90A8            	    78: 	bcc q_loop	; continue on if not overflow 16 bit
+                        	    79: 
+00:086B 60              	    80: 	rts
+                        	    81: 
+                        	    82: ; 16 bit divide wit 8 bit quotient - result in dividend
+                        	    83: div16:
+00:086C A900            	    84: 	lda #0
+00:086E 8516            	    85: 	sta remainder
+00:0870 A210            	    86: 	ldx #16
+                        	    87: div16loop:
+00:0872 0610            	    88: 	asl dividend
+00:0874 2611            	    89: 	rol dividend+1
+00:0876 2616            	    90: 	rol remainder
+00:0878 A516            	    91: 	lda remainder
+00:087A 38              	    92: 	sec
+00:087B E514            	    93: 	sbc divisor
+00:087D 9004            	    94: 	bcc div16_skip
+00:087F 8516            	    95: 	sta remainder
+00:0881 E610            	    96: 	inc dividend
+                        	    97: div16_skip:
+00:0883 CA              	    98: 	dex
+00:0884 D0EC            	    99: 	bne div16loop
+00:0886 60              	   100: 	rts
+                        	   101: 
+                        	   102: ; 32 bit divide with 16 bit quotient
+                        	   103: div32:
+00:0887 A900            	   104: 	lda #0
+00:0889 8516            	   105: 	sta remainder
+00:088B 8517            	   106: 	sta remainder+1
+00:088D A220            	   107: 	ldx #32
+                        	   108: div32loop:
+00:088F 0610            	   109: 	asl dividend	; dividend *2, msb -> carry
+00:0891 2611            	   110: 	rol dividend+1
+00:0893 2612            	   111: 	rol dividend+2
+00:0895 2613            	   112: 	rol dividend+3
+00:0897 2616            	   113: 	rol remainder	; remainder *2 + msb from carry
+00:0899 2617            	   114: 	rol remainder+1
+00:089B A516            	   115: 	lda remainder
+00:089D 38              	   116: 	sec
+00:089E E514            	   117: 	sbc divisor	; subtract divisor to see if it fits in
+00:08A0 A8              	   118: 	tay		; lb -> y, for we may need it later
+00:08A1 A517            	   119: 	lda remainder+1
+00:08A3 E515            	   120: 	sbc divisor+1	; hb in a
+00:08A5 9006            	   121: 	bcc div32_skip
+00:08A7 8517            	   122: 	sta remainder+1
+00:08A9 8416            	   123: 	sty remainder
+00:08AB E610            	   124: 	inc dividend	; result in dividend 2 low bytes
+                        	   125: div32_skip:
+00:08AD CA              	   126: 	dex
+00:08AE D0DF            	   127: 	bne div32loop
+00:08B0 60              	   128: 	rts
+                        	   129: 
+                        	   130: ; 32 bit divide by 10
+                        	   131: div32_10:
+00:08B1 A900            	   132: 	lda #0
+00:08B3 8516            	   133: 	sta remainder
+00:08B5 A220            	   134: 	ldx #32
+                        	   135: div32_10_loop:
+00:08B7 0620            	   136: 	asl dividend10	; dividend *2, msb -> carry
+00:08B9 2621            	   137: 	rol dividend10+1
+00:08BB 2622            	   138: 	rol dividend10+2
+00:08BD 2623            	   139: 	rol dividend10+3
+00:08BF 2616            	   140: 	rol remainder	; remainder *2 + msb from carry
+00:08C1 A516            	   141: 	lda remainder
+00:08C3 38              	   142: 	sec
+00:08C4 E90A            	   143: 	sbc #10		; subtract divisor to see if it fits in
+00:08C6 9004            	   144: 	bcc div32_10_skip
+00:08C8 8516            	   145: 	sta remainder
+00:08CA E610            	   146: 	inc dividend	; result in dividend 2 low bytes
+                        	   147: div32_10_skip:
+00:08CC CA              	   148: 	dex
+00:08CD D0E8            	   149: 	bne div32_10_loop
+00:08CF 60              	   150: 	rts
+                        	   151: 
+                        	   152: ; multiplication routine
+                        	   153: ; factors in mult1 and mult2
+                        	   154: ; result is A * 256 + X (AX)
+                        	   155: mul16:
+00:08D0 A900            	   156: 	lda #$00
+00:08D2 A208            	   157: 	ldx #$08
+00:08D4 18              	   158: 	clc
+00:08D5 9003            	   159: mul16_1:bcc mul16_2
+00:08D7 18              	   160: 	clc
+00:08D8 6518            	   161: 	adc mult2
+00:08DA 6A              	   162: mul16_2:ror
+00:08DB 6608            	   163: 	ror mult1
+00:08DD CA              	   164: 	dex
+00:08DE 10F5            	   165: 	bpl mul16_1
+00:08E0 A608            	   166: 	ldx mult1
+00:08E2 60              	   167: 	rts
+                        	   168: 
 
 
 Symbols by name:
-composite                        A:105E
+composite                        A:0862
 d                                E:0004
-d_loop                           A:1030
-div16                            A:106E
-div16_skip                       A:1085
-div16loop                        A:1074
-div32                            A:1089
-div32_10                         A:10B3
-div32_10_loop                    A:10B9
-div32_10_skip                    A:10CE
-div32_skip                       A:10AF
-div32loop                        A:1091
+d_loop                           A:0831
+div16                            A:086C
+div16_skip                       A:0883
+div16loop                        A:0872
+div32                            A:0887
+div32_10                         A:08B1
+div32_10_loop                    A:08B7
+div32_10_skip                    A:08CC
+div32_skip                       A:08AD
+div32loop                        A:088F
 dividend                         E:0010
 dividend10                       E:0020
 divisor                          E:0014
 dmax                             E:0006
-main                             A:1000
-mul16                            A:10D2
-mul16_1                          A:10D7
-mul16_2                          A:10DC
+main                             A:0800
+mul16                            A:08D0
+mul16_1                          A:08D5
+mul16_2                          A:08DA
 mult1                            E:0008
 mult2                            E:0018
-prime                            A:1050
+prime                            A:0854
 ptr                              E:0024
 q                                E:0000
-q_loop                           A:1013
+q_loop                           A:0813
 remainder                        E:0016
 
 Symbols by value:
@@ -210,20 +213,20 @@ Symbols by value:
 0018 mult2
 0020 dividend10
 0024 ptr
-1000 main
-1013 q_loop
-1030 d_loop
-1050 prime
-105E composite
-106E div16
-1074 div16loop
-1085 div16_skip
-1089 div32
-1091 div32loop
-10AF div32_skip
-10B3 div32_10
-10B9 div32_10_loop
-10CE div32_10_skip
-10D2 mul16
-10D7 mul16_1
-10DC mul16_2
+0800 main
+0813 q_loop
+0831 d_loop
+0854 prime
+0862 composite
+086C div16
+0872 div16loop
+0883 div16_skip
+0887 div32
+088F div32loop
+08AD div32_skip
+08B1 div32_10
+08B7 div32_10_loop
+08CC div32_10_skip
+08D0 mul16
+08D5 mul16_1
+08DA mul16_2

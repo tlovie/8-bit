@@ -1,5 +1,5 @@
 Sections:
-00: "segf800" (F800-FD8B)
+00: "segf800" (F800-FD97)
 01: "segfffa" (FFFA-0)
 
 
@@ -40,53 +40,75 @@ Source: "ACIA_6850.asm"
                         	    14: VIA_ier = $c00e		; 0b01111111
                         	    15: VIA_acr = $c00b		; 0b11000000
                         	    16: VIA_ddrb = $c002	; 0b11111111
-                        	    17: VIA_loc = $c004		; 0x06  cycle is 2 clocks longer than counter
+                        	    17: VIA_loc = $c004		; 0x01  cycle is 2 clocks longer than counter
                         	    18: VIA_hoc = $c005		; 0x00	
-                        	    19: 
-                        	    20: ACIA1_init:
-00:F800 A97F            	    21: 		lda #%01111111
-00:F802 8D0EC0          	    22: 		sta VIA_ier	; disable interrupts on VIA
-00:F805 A9C0            	    23: 		lda #%11000000  
-00:F807 8D0BC0          	    24: 		sta VIA_acr	; set to free running mode on timer 1
-00:F80A A9FF            	    25: 		lda #%11111111  
-00:F80C 8D02C0          	    26: 		sta VIA_ddrb	; set all pins to output
-00:F80F A901            	    27: 		lda #$01
-00:F811 8D04C0          	    28: 		sta VIA_loc	; count to 1 - will be 3 ticks
-00:F814 A900            	    29: 		lda #$00
-00:F816 8D05C0          	    30: 		sta VIA_hoc	; and start the counter by loading hoc
-00:F819 A903            	    31: 		lda #%00000011 	; CR1 and CR0 bits master reset
-00:F81B 8D00E0          	    32: 		sta ACIActl
-00:F81E A915            	    33: 		lda #%00010101	; no Rx int, no Tx int, 8n1, /16
-00:F820 8D00E0          	    34: 		sta ACIActl	; will result in 38400 bps
-00:F823 60              	    35: 		rts
-                        	    36: 
-                        	    37: ACIA1_Input:	; wait for a character on rx
-00:F824 AD00E0          	    38: 		lda ACIActl
-00:F827 2901            	    39: 		and #$01	; check if Receive register is full
-00:F829 F0F9            	    40: 		beq ACIA1_Input	; wait for a character to be ready
-00:F82B AD01E0          	    41: 		lda ACIAdat	; read the character
-00:F82E 60              	    42: 		rts
-                        	    43: 
-                        	    44: Get_Chr:
-                        	    45: ACIA1_Scan:	; check if a character is waiting and get it
-00:F82F 18              	    46: 		clc		; clear carry flag
-00:F830 AD00E0          	    47: 		lda ACIActl
-00:F833 2901            	    48: 		and #$01	; check if Receive register is full
-00:F835 F004            	    49: 		beq ACIA_noscan ; no character is waiting so return
-00:F837 AD01E0          	    50: 		lda ACIAdat	; read the character
-00:F83A 38              	    51: 		sec		; set carry flag if we read a character
-00:F83B 60              	    52: ACIA_noscan:	rts
-                        	    53: 
-                        	    54: Put_Chr:
-                        	    55: ACIA1_Output:	; send character to output port
-00:F83C 48              	    56: 		pha
-00:F83D AD00E0          	    57: ACIA_Out1:	lda ACIActl
-00:F840 2902            	    58: 		and #$02	; check if Transmit is empty
-00:F842 F0F9            	    59: 		beq ACIA_Out1   ; wait until transmit is empty
-00:F844 68              	    60: 		pla
-00:F845 8D01E0          	    61: 		sta ACIAdat	; put character into tx buffer
-00:F848 60              	    62: 		rts
-                        	    63: 
+                        	    19: WR_ptr = $ff		; read and write buffer positons
+                        	    20: RD_ptr = $fe		; zero page
+                        	    21: SER_buf = $0200		; ring buffer for serial 
+                        	    22: 
+                        	    23: ;WR_BUF:  LDX  WR_ptr     ; Start with A containing the byte to put in the buffer.
+                        	    24: ;         STA  SER_buf,X   ; Get the pointer value and store the data where it says,
+                        	    25: ;         INC  WR_ptr     ; then increment the pointer for the next write.
+                        	    26: ;         RTS
+                        	    27: ;-------------
+00:F800 A5FF            	    28: RD_BUF:  lda WR_ptr
+00:F802 E5FE            	    29: 	 sbc RD_ptr	; count of buffer in a
+00:F804 C9A0            	    30: 	 cmp #$a0	; compare with #a0
+00:F806 B005            	    31: 	 bcs RD_BUF1	; if its positive then leave the flow off
+00:F808 A995            	    32:          lda #%10010101  ; Rx int, no Tx int + RTS low, 8n1, /16
+00:F80A 8D00E0          	    33:          sta ACIActl     ; will result in 19200 bps
+00:F80D A6FE            	    34: RD_BUF1: LDX  RD_ptr     ; Ends with A containing the byte just read from buffer.
+00:F80F BD0002          	    35:          LDA  SER_buf,X   ; Get the pointer value and read the data it points to.
+00:F812 E6FE            	    36:          INC  RD_ptr     ; Then increment the pointer for the next read.
+00:F814 60              	    37:          RTS
+                        	    38: ;-------------
+                        	    39: 
+                        	    40: ACIA1_init:
+00:F815 A5FE            	    41: 		lda RD_ptr	; initialize write pointer
+00:F817 85FF            	    42: 		sta WR_ptr	; equal to read pointer
+00:F819 A97F            	    43: 		lda #%01111111
+00:F81B 8D0EC0          	    44: 		sta VIA_ier	; disable interrupts on VIA
+00:F81E A9C0            	    45: 		lda #%11000000  
+00:F820 8D0BC0          	    46: 		sta VIA_acr	; set to free running mode on timer 1
+00:F823 A9FF            	    47: 		lda #%11111111  
+00:F825 8D02C0          	    48: 		sta VIA_ddrb	; set all pins to output
+00:F828 A901            	    49: 		lda #$01
+00:F82A 8D04C0          	    50: 		sta VIA_loc	; count to 1 - will be 3 ticks
+00:F82D A900            	    51: 		lda #$00
+00:F82F 8D05C0          	    52: 		sta VIA_hoc	; and start the counter by loading hoc
+00:F832 A903            	    53: 		lda #%00000011 	; CR1 and CR0 bits master reset
+00:F834 8D00E0          	    54: 		sta ACIActl
+00:F837 A995            	    55: 		lda #%10010101	; Rx int, no Tx int, 8n1, /16
+00:F839 8D00E0          	    56: 		sta ACIActl	; will result in 19200 bps
+00:F83C 60              	    57: 		rts
+                        	    58: 
+00:F83D 18              	    59: ACIA1_Input:	clc	; wait for a character on rx
+00:F83E A5FE            	    60: 		lda RD_ptr
+00:F840 C5FF            	    61: ACIA1_cmp:	cmp WR_ptr
+00:F842 F0FC            	    62: 		beq ACIA1_cmp	; wait for a character to be ready
+00:F844 2000F8          	    63: 		jsr RD_BUF	; read the character
+00:F847 60              	    64: 		rts
+                        	    65: 
+                        	    66: Get_Chr:
+                        	    67: ACIA1_Scan:	; check if a character is waiting and get it
+00:F848 18              	    68: 		clc		; clear carry flag
+00:F849 A5FF            	    69: 		lda WR_ptr	; load the WR position
+00:F84B C5FE            	    70: 		cmp RD_ptr	; compare the RD position
+00:F84D F004            	    71: 		beq ACIA_noscan ; no character is waiting so return
+00:F84F 2000F8          	    72: 		jsr RD_BUF	; read the character
+00:F852 38              	    73: 		sec		; set carry flag if we read a character
+00:F853 60              	    74: ACIA_noscan:	rts
+                        	    75: 
+                        	    76: Put_Chr:
+                        	    77: ACIA1_Output:	; send character to output port
+00:F854 48              	    78: 		pha
+00:F855 AD00E0          	    79: ACIA_Out1:	lda ACIActl
+00:F858 2902            	    80: 		and #$02	; check if Transmit is empty
+00:F85A F0F9            	    81: 		beq ACIA_Out1   ; wait until transmit is empty
+00:F85C 68              	    82: 		pla
+00:F85D 8D01E0          	    83: 		sta ACIAdat	; put character into tx buffer
+00:F860 60              	    84: 		rts
+                        	    85: 
 
 Source: "sbc.asm"
                         	    19: 
@@ -202,280 +224,271 @@ Source: "xmodem-rec.asm"
                         	   107: ; v 1.0 recode for use with SBC2
                         	   108: ; v 1.1 added block 1 masking (block 257 would be corrupted)
                         	   109: 
-                        	   110: ;		*= 	$7B00		; Start of program (adjust to your needs)
-                        	   111: ;
-00:F849 20D7F9          	   112: XModem		jsr	MAKECRCTABLE	; make the CRC table
-00:F84C 2042F9          	   113: 		jsr	PrintMsg	; send prompt and info
-00:F84F A901            	   114: 		lda	#$01
-00:F851 853C            	   115: 		sta	blkno		; set block # to 1
-00:F853 853F            	   116: 		sta	bflag		; set flag to get address from block 1
-00:F855 A943            	   117: StartCrc	lda	#"C"		; "C" start with CRC mode
-00:F857 203CF8          	   118: 		jsr	Put_Chr		; send it
-00:F85A A9FF            	   119: 		lda	#$FF	
-00:F85C 853E            	   120: 		sta	retry2		; set loop counter for ~3 sec delay
-00:F85E A900            	   121: 		lda	#$00
-00:F860 8538            	   122:                	sta	crc
-00:F862 8539            	   123: 		sta	crch		; init CRC value	
-00:F864 2025F9          	   124: 		jsr	GetByte		; wait for input
-00:F867 B011            	   125:                	bcs	GotByte		; byte received, process it
-00:F869 90EA            	   126: 		bcc	StartCrc	; resend "C"
-                        	   127: 
-00:F86B A9FF            	   128: StartBlk	lda	#$FF		; 
-00:F86D 853E            	   129: 		sta	retry2		; set loop counter for ~3 sec delay
-00:F86F A900            	   130: 		lda	#$00		;
-00:F871 8538            	   131: 		sta	crc		;
-00:F873 8539            	   132: 		sta	crch		; init CRC value	
-00:F875 2025F9          	   133: 		jsr	GetByte		; get first byte of block
-00:F878 90F1            	   134: 		bcc	StartBlk	; timed out, keep waiting...
-00:F87A C91B            	   135: GotByte		cmp	#ESC		; quitting?
-00:F87C D001            	   136:                 bne	GotByte1	; no
-                        	   137: ;		lda	#$FE		; Error code in "A" of desired
-00:F87E 00              	   138:                 brk			; YES - do BRK or change to RTS if desired
-00:F87F C901            	   139: GotByte1        cmp	#SOH		; start of block?
-00:F881 F007            	   140: 		beq	BegBlk		; yes
-00:F883 C904            	   141: 		cmp	#EOT		;
-00:F885 D051            	   142: 		bne	BadCrc		; Not SOH or EOT, so flush buffer & send NAK	
-00:F887 4C19F9          	   143: 		jmp	Done		; EOT - all done!
-00:F88A A200            	   144: BegBlk		ldx	#$00
-00:F88C A9FF            	   145: GetBlk		lda	#$ff		; 3 sec window to receive characters
-00:F88E 853E            	   146: 		sta 	retry2		;
-00:F890 2025F9          	   147: GetBlk1		jsr	GetByte		; get next character
-00:F893 9043            	   148: 		bcc	BadCrc		; chr rcv error, flush and send NAK
-00:F895 9D0003          	   149: GetBlk2		sta	Rbuff,x		; good char, save it in the rcv buffer
-00:F898 E8              	   150: 		inx			; inc buffer pointer	
-00:F899 E084            	   151: 		cpx	#$84		; <01> <FE> <128 bytes> <CRCH> <CRCL>
-00:F89B D0EF            	   152: 		bne	GetBlk		; get 132 characters
-00:F89D A200            	   153: 		ldx	#$00		;
-00:F89F BD0003          	   154: 		lda	Rbuff,x		; get block # from buffer
-00:F8A2 C53C            	   155: 		cmp	blkno		; compare to expected block #	
-00:F8A4 F007            	   156: 		beq	GoodBlk1	; matched!
-00:F8A6 2086F9          	   157: 		jsr	Print_Err	; Unexpected block number - abort	
-00:F8A9 2038F9          	   158: 		jsr	Flush		; mismatched - flush buffer and then do BRK
-                        	   159: ;		lda	#$FD		; put error code in "A" if desired
-00:F8AC 00              	   160: 		brk			; unexpected block # - fatal error - BRK or RTS
-00:F8AD 49FF            	   161: GoodBlk1	eor	#$ff		; 1's comp of block #
-00:F8AF E8              	   162: 		inx			;
-00:F8B0 DD0003          	   163: 		cmp	Rbuff,x		; compare with expected 1's comp of block #
-00:F8B3 F007            	   164: 		beq	GoodBlk2 	; matched!
-00:F8B5 2086F9          	   165: 		jsr	Print_Err	; Unexpected block number - abort	
-00:F8B8 2038F9          	   166: 		jsr 	Flush		; mismatched - flush buffer and then do BRK
-                        	   167: ;		lda	#$FC		; put error code in "A" if desired
-00:F8BB 00              	   168: 		brk			; bad 1's comp of block#	
-00:F8BC A002            	   169: GoodBlk2	ldy	#$02		; 
-00:F8BE B90003          	   170: CalcCrc		lda	Rbuff,y		; calculate the CRC for the 128 bytes of data	
-00:F8C1 20C7F9          	   171: 		jsr	UpdCrc		; could inline sub here for speed
-00:F8C4 C8              	   172: 		iny			;
-00:F8C5 C082            	   173: 		cpy	#$82		; 128 bytes
-00:F8C7 D0F5            	   174: 		bne	CalcCrc		;
-00:F8C9 B90003          	   175: 		lda	Rbuff,y		; get hi CRC from buffer
-00:F8CC C539            	   176: 		cmp	crch		; compare to calculated hi CRC
-00:F8CE D008            	   177: 		bne	BadCrc		; bad crc, send NAK
-00:F8D0 C8              	   178: 		iny			;
-00:F8D1 B90003          	   179: 		lda	Rbuff,y		; get lo CRC from buffer
-00:F8D4 C538            	   180: 		cmp	crc		; compare to calculated lo CRC
-00:F8D6 F00B            	   181: 		beq	GoodCrc		; good CRC
-00:F8D8 2038F9          	   182: BadCrc		jsr	Flush		; flush the input port
-00:F8DB A915            	   183: 		lda	#NAK		;
-00:F8DD 203CF8          	   184: 		jsr	Put_Chr		; send NAK to resend block
-00:F8E0 4C6BF8          	   185: 		jmp	StartBlk	; start over, get the block again			
-00:F8E3 A202            	   186: GoodCrc		ldx	#$02		;
-00:F8E5 A53C            	   187: 		lda	blkno		; get the block number
-00:F8E7 C901            	   188: 		cmp	#$01		; 1st block?
-00:F8E9 D012            	   189: 		bne	CopyBlk		; no, copy all 128 bytes
-00:F8EB A53F            	   190: 		lda	bflag		; is it really block 1, not block 257, 513 etc.
-00:F8ED F00E            	   191: 		beq	CopyBlk		; no, copy all 128 bytes
-00:F8EF BD0003          	   192: 		lda	Rbuff,x		; get target address from 1st 2 bytes of blk 1
-00:F8F2 853A            	   193: 		sta	ptr		; save lo address
-00:F8F4 E8              	   194: 		inx			;
-00:F8F5 BD0003          	   195: 		lda	Rbuff,x		; get hi address
-00:F8F8 853B            	   196: 		sta	ptr+1		; save it
-00:F8FA E8              	   197: 		inx			; point to first byte of data
-00:F8FB C63F            	   198: 		dec	bflag		; set the flag so we won't get another address		
-00:F8FD A000            	   199: CopyBlk		ldy	#$00		; set offset to zero
-00:F8FF BD0003          	   200: CopyBlk3	lda	Rbuff,x		; get data byte from buffer
-00:F902 913A            	   201: 		sta	(ptr),y		; save to target
-00:F904 E63A            	   202: 		inc	ptr		; point to next address
-00:F906 D002            	   203: 		bne	CopyBlk4	; did it step over page boundary?
-00:F908 E63B            	   204: 		inc	ptr+1		; adjust high address for page crossing
-00:F90A E8              	   205: CopyBlk4	inx			; point to next data byte
-00:F90B E082            	   206: 		cpx	#$82		; is it the last byte
-00:F90D D0F0            	   207: 		bne	CopyBlk3	; no, get the next one
-00:F90F E63C            	   208: IncBlk		inc	blkno		; done.  Inc the block #
-00:F911 A906            	   209: 		lda	#ACK		; send ACK
-00:F913 203CF8          	   210: 		jsr	Put_Chr		;
-00:F916 4C6BF8          	   211: 		jmp	StartBlk	; get next block
-00:F919 A906            	   212: Done		lda	#ACK		; last block, send ACK and exit.
-00:F91B 203CF8          	   213: 		jsr	Put_Chr		;
-00:F91E 2038F9          	   214: 		jsr	Flush		; get leftover characters, if any
-00:F921 20A4F9          	   215: 		jsr	Print_Good	;
-00:F924 60              	   216: 		rts			;
+00:F861 20C1F9          	   110: XModem		jsr	MAKECRCTABLE	; make the CRC table
+00:F864 205AF9          	   111: 		jsr	PrintMsg	; send prompt and info
+00:F867 A901            	   112: 		lda	#$01
+00:F869 853C            	   113: 		sta	blkno		; set block # to 1
+00:F86B 853F            	   114: 		sta	bflag		; set flag to get address from block 1
+00:F86D A943            	   115: StartCrc	lda	#"C"		; "C" start with CRC mode
+00:F86F 2054F8          	   116: 		jsr	Put_Chr		; send it
+00:F872 A9FF            	   117: 		lda	#$FF	
+00:F874 853E            	   118: 		sta	retry2		; set loop counter for ~3 sec delay
+00:F876 A900            	   119: 		lda	#$00
+00:F878 8538            	   120:                	sta	crc
+00:F87A 8539            	   121: 		sta	crch		; init CRC value	
+00:F87C 203DF9          	   122: 		jsr	GetByte		; wait for input
+00:F87F B011            	   123:                	bcs	GotByte		; byte received, process it
+00:F881 90EA            	   124: 		bcc	StartCrc	; resend "C"
+                        	   125: 
+00:F883 A9FF            	   126: StartBlk	lda	#$FF		; 
+00:F885 853E            	   127: 		sta	retry2		; set loop counter for ~3 sec delay
+00:F887 A900            	   128: 		lda	#$00		;
+00:F889 8538            	   129: 		sta	crc		;
+00:F88B 8539            	   130: 		sta	crch		; init CRC value	
+00:F88D 203DF9          	   131: 		jsr	GetByte		; get first byte of block
+00:F890 90F1            	   132: 		bcc	StartBlk	; timed out, keep waiting...
+00:F892 C91B            	   133: GotByte		cmp	#ESC		; quitting?
+00:F894 D001            	   134:                 bne	GotByte1	; no
+                        	   135: ;		lda	#$FE		; Error code in "A" of desired
+00:F896 00              	   136:                 brk			; YES - do BRK or change to RTS if desired
+00:F897 C901            	   137: GotByte1        cmp	#SOH		; start of block?
+00:F899 F007            	   138: 		beq	BegBlk		; yes
+00:F89B C904            	   139: 		cmp	#EOT		;
+00:F89D D051            	   140: 		bne	BadCrc		; Not SOH or EOT, so flush buffer & send NAK	
+00:F89F 4C31F9          	   141: 		jmp	Done		; EOT - all done!
+00:F8A2 A200            	   142: BegBlk		ldx	#$00
+00:F8A4 A9FF            	   143: GetBlk		lda	#$ff		; 3 sec window to receive characters
+00:F8A6 853E            	   144: 		sta 	retry2		;
+00:F8A8 203DF9          	   145: GetBlk1		jsr	GetByte		; get next character
+00:F8AB 9043            	   146: 		bcc	BadCrc		; chr rcv error, flush and send NAK
+00:F8AD 9D0003          	   147: GetBlk2		sta	Rbuff,x		; good char, save it in the rcv buffer
+00:F8B0 E8              	   148: 		inx			; inc buffer pointer	
+00:F8B1 E084            	   149: 		cpx	#$84		; <01> <FE> <128 bytes> <CRCH> <CRCL>
+00:F8B3 D0EF            	   150: 		bne	GetBlk		; get 132 characters
+00:F8B5 A200            	   151: 		ldx	#$00		;
+00:F8B7 BD0003          	   152: 		lda	Rbuff,x		; get block # from buffer
+00:F8BA C53C            	   153: 		cmp	blkno		; compare to expected block #	
+00:F8BC F007            	   154: 		beq	GoodBlk1	; matched!
+00:F8BE 2080F9          	   155: 		jsr	Print_Err	; Unexpected block number - abort	
+00:F8C1 2050F9          	   156: 		jsr	Flush		; mismatched - flush buffer and then do BRK
+                        	   157: ;		lda	#$FD		; put error code in "A" if desired
+00:F8C4 00              	   158: 		brk			; unexpected block # - fatal error - BRK or RTS
+00:F8C5 49FF            	   159: GoodBlk1	eor	#$ff		; 1's comp of block #
+00:F8C7 E8              	   160: 		inx			;
+00:F8C8 DD0003          	   161: 		cmp	Rbuff,x		; compare with expected 1's comp of block #
+00:F8CB F007            	   162: 		beq	GoodBlk2 	; matched!
+00:F8CD 2080F9          	   163: 		jsr	Print_Err	; Unexpected block number - abort	
+00:F8D0 2050F9          	   164: 		jsr 	Flush		; mismatched - flush buffer and then do BRK
+                        	   165: ;		lda	#$FC		; put error code in "A" if desired
+00:F8D3 00              	   166: 		brk			; bad 1's comp of block#	
+00:F8D4 A002            	   167: GoodBlk2	ldy	#$02		; 
+00:F8D6 B90003          	   168: CalcCrc		lda	Rbuff,y		; calculate the CRC for the 128 bytes of data	
+00:F8D9 20B1F9          	   169: 		jsr	UpdCrc		; could inline sub here for speed
+00:F8DC C8              	   170: 		iny			;
+00:F8DD C082            	   171: 		cpy	#$82		; 128 bytes
+00:F8DF D0F5            	   172: 		bne	CalcCrc		;
+00:F8E1 B90003          	   173: 		lda	Rbuff,y		; get hi CRC from buffer
+00:F8E4 C539            	   174: 		cmp	crch		; compare to calculated hi CRC
+00:F8E6 D008            	   175: 		bne	BadCrc		; bad crc, send NAK
+00:F8E8 C8              	   176: 		iny			;
+00:F8E9 B90003          	   177: 		lda	Rbuff,y		; get lo CRC from buffer
+00:F8EC C538            	   178: 		cmp	crc		; compare to calculated lo CRC
+00:F8EE F00B            	   179: 		beq	GoodCrc		; good CRC
+00:F8F0 2050F9          	   180: BadCrc		jsr	Flush		; flush the input port
+00:F8F3 A915            	   181: 		lda	#NAK		;
+00:F8F5 2054F8          	   182: 		jsr	Put_Chr		; send NAK to resend block
+00:F8F8 4C83F8          	   183: 		jmp	StartBlk	; start over, get the block again			
+00:F8FB A202            	   184: GoodCrc		ldx	#$02		;
+00:F8FD A53C            	   185: 		lda	blkno		; get the block number
+00:F8FF C901            	   186: 		cmp	#$01		; 1st block?
+00:F901 D012            	   187: 		bne	CopyBlk		; no, copy all 128 bytes
+00:F903 A53F            	   188: 		lda	bflag		; is it really block 1, not block 257, 513 etc.
+00:F905 F00E            	   189: 		beq	CopyBlk		; no, copy all 128 bytes
+00:F907 BD0003          	   190: 		lda	Rbuff,x		; get target address from 1st 2 bytes of blk 1
+00:F90A 853A            	   191: 		sta	ptr		; save lo address
+00:F90C E8              	   192: 		inx			;
+00:F90D BD0003          	   193: 		lda	Rbuff,x		; get hi address
+00:F910 853B            	   194: 		sta	ptr+1		; save it
+00:F912 E8              	   195: 		inx			; point to first byte of data
+00:F913 C63F            	   196: 		dec	bflag		; set the flag so we won't get another address		
+00:F915 A000            	   197: CopyBlk		ldy	#$00		; set offset to zero
+00:F917 BD0003          	   198: CopyBlk3	lda	Rbuff,x		; get data byte from buffer
+00:F91A 913A            	   199: 		sta	(ptr),y		; save to target
+00:F91C E63A            	   200: 		inc	ptr		; point to next address
+00:F91E D002            	   201: 		bne	CopyBlk4	; did it step over page boundary?
+00:F920 E63B            	   202: 		inc	ptr+1		; adjust high address for page crossing
+00:F922 E8              	   203: CopyBlk4	inx			; point to next data byte
+00:F923 E082            	   204: 		cpx	#$82		; is it the last byte
+00:F925 D0F0            	   205: 		bne	CopyBlk3	; no, get the next one
+00:F927 E63C            	   206: IncBlk		inc	blkno		; done.  Inc the block #
+00:F929 A906            	   207: 		lda	#ACK		; send ACK
+00:F92B 2054F8          	   208: 		jsr	Put_Chr		;
+00:F92E 4C83F8          	   209: 		jmp	StartBlk	; get next block
+00:F931 A906            	   210: Done		lda	#ACK		; last block, send ACK and exit.
+00:F933 2054F8          	   211: 		jsr	Put_Chr		;
+00:F936 2050F9          	   212: 		jsr	Flush		; get leftover characters, if any
+00:F939 2099F9          	   213: 		jsr	Print_Good	;
+00:F93C 60              	   214: 		rts			;
+                        	   215: ;
+                        	   216: ;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
                         	   217: ;
-                        	   218: ;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                        	   218: ; subroutines
                         	   219: ;
-                        	   220: ; subroutines
-                        	   221: ;
-                        	   222: ;					;
-00:F925 A900            	   223: GetByte		lda	#$00		; wait for chr input and cycle timing loop
-00:F927 853D            	   224: 		sta	retry		; set low value of timing loop
-00:F929 202FF8          	   225: StartCrcLp	jsr	Get_chr		; get chr from serial port, don't wait 
-00:F92C B009            	   226: 		bcs	GetByte1	; got one, so exit
-00:F92E C63D            	   227: 		dec	retry		; no character received, so dec counter
-00:F930 D0F7            	   228: 		bne	StartCrcLp	;
-00:F932 C63E            	   229: 		dec	retry2		; dec hi byte of counter
-00:F934 D0F3            	   230: 		bne	StartCrcLp	; look for character again
-00:F936 18              	   231: 		clc			; if loop times out, CLC, else SEC and return
-00:F937 60              	   232: GetByte1	rts			; with character in "A"
-                        	   233: ;
-00:F938 A970            	   234: Flush		lda	#$70		; flush receive buffer
-00:F93A 853E            	   235: 		sta	retry2		; flush until empty for ~1 sec.
-00:F93C 2025F9          	   236: Flush1		jsr	GetByte		; read the port
-00:F93F B0F7            	   237: 		bcs	Flush		; if chr recvd, wait for another
-00:F941 60              	   238: 		rts			; else done
-                        	   239: ;
-00:F942 A200            	   240: PrintMsg	ldx	#$00		; PRINT starting message
-00:F944 BD50F9          	   241: PrtMsg1		lda   	Msg,x		
-00:F947 F006            	   242: 		beq	PrtMsg2			
-00:F949 203CF8          	   243: 		jsr	Put_Chr
-00:F94C E8              	   244: 		inx
-00:F94D D0F5            	   245: 		bne	PrtMsg1
-00:F94F 60              	   246: PrtMsg2		rts
-00:F950 426567696E20584D	   247: Msg		.byte	"Begin XMODEM/CRC transfer.  Press <Esc> to abort..."
-00:F958 4F44454D2F435243
-00:F960 207472616E736665
-00:F968 722E202050726573
-00:F970 73203C4573633E20
-00:F978 746F2061626F7274
-00:F980 2E2E2E
-00:F983 0D              	   248: 		.BYTE  	CR, LF
-00:F984 0A
-00:F985 00              	   249:                	.byte   0
-                        	   250: ;
-00:F986 A200            	   251: Print_Err	ldx	#$00		; PRINT Error message
-00:F988 BD94F9          	   252: PrtErr1		lda   	ErrMsg,x
-00:F98B F006            	   253: 		beq	PrtErr2
-00:F98D 203CF8          	   254: 		jsr	Put_Chr
-00:F990 E8              	   255: 		inx
-00:F991 D0F5            	   256: 		bne	PrtErr1
-00:F993 60              	   257: PrtErr2		rts
-00:F994 55706C6F61642045	   258: ErrMsg		.byte 	"Upload Error!"
-00:F99C 72726F7221
-00:F9A1 0D              	   259: 		.BYTE  	CR, LF
-00:F9A2 0A
-00:F9A3 00              	   260:                 .byte   0
-                        	   261: ;
-00:F9A4 A200            	   262: Print_Good	ldx	#$00		; PRINT Good Transfer message
-00:F9A6 BDB2F9          	   263: Prtgood1	lda   	GoodMsg,x
-00:F9A9 F006            	   264: 		beq	Prtgood2
-00:F9AB 203CF8          	   265: 		jsr	Put_Chr
-00:F9AE E8              	   266: 		inx
-00:F9AF D0F5            	   267: 		bne	Prtgood1
-00:F9B1 60              	   268: Prtgood2	rts
-00:F9B2 55706C6F61642053	   269: GoodMsg		.byte 	"Upload Successful!"
-00:F9BA 7563636573736675
-00:F9C2 6C21
-00:F9C4 0D              	   270: 		.BYTE  	CR, LF
-00:F9C5 0A
-00:F9C6 00              	   271:                 .byte   0
-                        	   272: ;
+                        	   220: ;					;
+00:F93D A900            	   221: GetByte		lda	#$00		; wait for chr input and cycle timing loop
+00:F93F 853D            	   222: 		sta	retry		; set low value of timing loop
+00:F941 2048F8          	   223: StartCrcLp	jsr	Get_chr		; get chr from serial port, don't wait 
+00:F944 B009            	   224: 		bcs	GetByte1	; got one, so exit
+00:F946 C63D            	   225: 		dec	retry		; no character received, so dec counter
+00:F948 D0F7            	   226: 		bne	StartCrcLp	;
+00:F94A C63E            	   227: 		dec	retry2		; dec hi byte of counter
+00:F94C D0F3            	   228: 		bne	StartCrcLp	; look for character again
+00:F94E 18              	   229: 		clc			; if loop times out, CLC, else SEC and return
+00:F94F 60              	   230: GetByte1	rts			; with character in "A"
+                        	   231: ;
+00:F950 A970            	   232: Flush		lda	#$70		; flush receive buffer
+00:F952 853E            	   233: 		sta	retry2		; flush until empty for ~1 sec.
+00:F954 203DF9          	   234: Flush1		jsr	GetByte		; read the port
+00:F957 B0F7            	   235: 		bcs	Flush		; if chr recvd, wait for another
+00:F959 60              	   236: 		rts			; else done
+                        	   237: ;
+00:F95A A200            	   238: PrintMsg	ldx	#$00		; PRINT starting message
+00:F95C BD68F9          	   239: PrtMsg1		lda   	Msg,x		
+00:F95F F006            	   240: 		beq	PrtMsg2			
+00:F961 2054F8          	   241: 		jsr	Put_Chr
+00:F964 E8              	   242: 		inx
+00:F965 D0F5            	   243: 		bne	PrtMsg1
+00:F967 60              	   244: PrtMsg2		rts
+00:F968 582F4352432E203C	   245: Msg		.byte	"X/CRC. <Esc> to quit."
+00:F970 4573633E20746F20
+00:F978 717569742E
+00:F97D 0D              	   246: 		.BYTE  	CR, LF
+00:F97E 0A
+00:F97F 00              	   247:                	.byte   0
+                        	   248: ;
+00:F980 A200            	   249: Print_Err	ldx	#$00		; PRINT Error message
+00:F982 BD8EF9          	   250: PrtErr1		lda   	ErrMsg,x
+00:F985 F006            	   251: 		beq	PrtErr2
+00:F987 2054F8          	   252: 		jsr	Put_Chr
+00:F98A E8              	   253: 		inx
+00:F98B D0F5            	   254: 		bne	PrtErr1
+00:F98D 60              	   255: PrtErr2		rts
+00:F98E 55706C2045727221	   256: ErrMsg		.byte 	"Upl Err!"
+00:F996 0D              	   257: 		.BYTE  	CR, LF
+00:F997 0A
+00:F998 00              	   258:                 .byte   0
+                        	   259: ;
+00:F999 A200            	   260: Print_Good	ldx	#$00		; PRINT Good Transfer message
+00:F99B BDA7F9          	   261: Prtgood1	lda   	GoodMsg,x
+00:F99E F006            	   262: 		beq	Prtgood2
+00:F9A0 2054F8          	   263: 		jsr	Put_Chr
+00:F9A3 E8              	   264: 		inx
+00:F9A4 D0F5            	   265: 		bne	Prtgood1
+00:F9A6 60              	   266: Prtgood2	rts
+00:F9A7 55706C204F4B21  	   267: GoodMsg		.byte 	"Upl OK!"
+00:F9AE 0D              	   268: 		.BYTE  	CR, LF
+00:F9AF 0A
+00:F9B0 00              	   269:                 .byte   0
+                        	   270: ;
+                        	   271: ;
+                        	   272: ;=========================================================================
                         	   273: ;
-                        	   274: ;=========================================================================
-                        	   275: ;
+                        	   274: ;
+                        	   275: ;  CRC subroutines 
                         	   276: ;
-                        	   277: ;  CRC subroutines 
-                        	   278: ;
-                        	   279: ;
-00:F9C7 4539            	   280: UpdCrc		eor 	crc+1 		; Quick CRC computation with lookup tables
-00:F9C9 AA              	   281:        		tax		 	; updates the two bytes at crc & crc+1
-00:F9CA A538            	   282:        		lda 	crc		; with the byte send in the "A" register
-00:F9CC 5D007F          	   283:        		eor 	CRCHI,X
-00:F9CF 8539            	   284:        		sta 	crc+1
-00:F9D1 BD007E          	   285:       	 	lda 	CRCLO,X
-00:F9D4 8538            	   286:        		sta 	crc
-00:F9D6 60              	   287:        		rts
-                        	   288: ;
-                        	   289: ; Alternate solution is to build the two lookup tables at run-time.  This might
-                        	   290: ; be desirable if the program is running from ram to reduce binary upload time.
-                        	   291: ; The following code generates the data for the lookup tables.  You would need to
-                        	   292: ; un-comment the variable declarations for crclo & crchi in the Tables and Constants
-                        	   293: ; section above and call this routine to build the tables before calling the
-                        	   294: ; "xmodem" routine.
-                        	   295: ;
-                        	   296: MAKECRCTABLE
-00:F9D7 A200            	   297: 		ldx 	#$00
-00:F9D9 A900            	   298: 		LDA	#$00
-00:F9DB 9D007E          	   299: zeroloop	sta 	crclo,x
-00:F9DE 9D007F          	   300: 		sta 	crchi,x
-00:F9E1 E8              	   301: 		inx
-00:F9E2 D0F7            	   302: 		bne	zeroloop
-00:F9E4 A200            	   303: 		ldx	#$00
-00:F9E6 8A              	   304: fetch		txa
-00:F9E7 5D007F          	   305: 		eor	crchi,x
-00:F9EA 9D007F          	   306: 		sta	crchi,x
-00:F9ED A008            	   307: 		ldy	#$08
-00:F9EF 1E007E          	   308: fetch1		asl	crclo,x
-00:F9F2 3E007F          	   309: 		rol	crchi,x
-00:F9F5 9010            	   310: 		bcc	fetch2
-00:F9F7 BD007F          	   311: 		lda	crchi,x
-00:F9FA 4910            	   312: 		eor	#$10
-00:F9FC 9D007F          	   313: 		sta	crchi,x
-00:F9FF BD007E          	   314: 		lda	crclo,x
-00:FA02 4921            	   315: 		eor	#$21
-00:FA04 9D007E          	   316: 		sta	crclo,x
-00:FA07 88              	   317: fetch2		dey
-00:FA08 D0E5            	   318: 		bne	fetch1
-00:FA0A E8              	   319: 		inx
-00:FA0B D0D9            	   320: 		bne	fetch
-00:FA0D 60              	   321: 		rts
-                        	   322: ;
-                        	   323: ; The following tables are used to calculate the CRC for the 128 bytes
-                        	   324: ; in the xmodem data blocks.  You can use these tables if you plan to 
-                        	   325: ; store this program in ROM.  If you choose to build them at run-time, 
-                        	   326: ; then just delete them and define the two labels: crclo & crchi.
-                        	   327: ;
-                        	   328: ; low byte CRC lookup table (should be page aligned)
-                        	   329: ;		*= $7D00
-                        	   330: ;crclo
-                        	   331: ; .byte $00,$21,$42,$63,$84,$A5,$C6,$E7,$08,$29,$4A,$6B,$8C,$AD,$CE,$EF
-                        	   332: ; .byte $31,$10,$73,$52,$B5,$94,$F7,$D6,$39,$18,$7B,$5A,$BD,$9C,$FF,$DE
-                        	   333: ; .byte $62,$43,$20,$01,$E6,$C7,$A4,$85,$6A,$4B,$28,$09,$EE,$CF,$AC,$8D
-                        	   334: ; .byte $53,$72,$11,$30,$D7,$F6,$95,$B4,$5B,$7A,$19,$38,$DF,$FE,$9D,$BC
-                        	   335: ; .byte $C4,$E5,$86,$A7,$40,$61,$02,$23,$CC,$ED,$8E,$AF,$48,$69,$0A,$2B
-                        	   336: ; .byte $F5,$D4,$B7,$96,$71,$50,$33,$12,$FD,$DC,$BF,$9E,$79,$58,$3B,$1A
-                        	   337: ; .byte $A6,$87,$E4,$C5,$22,$03,$60,$41,$AE,$8F,$EC,$CD,$2A,$0B,$68,$49
-                        	   338: ; .byte $97,$B6,$D5,$F4,$13,$32,$51,$70,$9F,$BE,$DD,$FC,$1B,$3A,$59,$78
-                        	   339: ; .byte $88,$A9,$CA,$EB,$0C,$2D,$4E,$6F,$80,$A1,$C2,$E3,$04,$25,$46,$67
-                        	   340: ; .byte $B9,$98,$FB,$DA,$3D,$1C,$7F,$5E,$B1,$90,$F3,$D2,$35,$14,$77,$56
-                        	   341: ; .byte $EA,$CB,$A8,$89,$6E,$4F,$2C,$0D,$E2,$C3,$A0,$81,$66,$47,$24,$05
-                        	   342: ; .byte $DB,$FA,$99,$B8,$5F,$7E,$1D,$3C,$D3,$F2,$91,$B0,$57,$76,$15,$34
-                        	   343: ; .byte $4C,$6D,$0E,$2F,$C8,$E9,$8A,$AB,$44,$65,$06,$27,$C0,$E1,$82,$A3
-                        	   344: ; .byte $7D,$5C,$3F,$1E,$F9,$D8,$BB,$9A,$75,$54,$37,$16,$F1,$D0,$B3,$92
-                        	   345: ; .byte $2E,$0F,$6C,$4D,$AA,$8B,$E8,$C9,$26,$07,$64,$45,$A2,$83,$E0,$C1
-                        	   346: ; .byte $1F,$3E,$5D,$7C,$9B,$BA,$D9,$F8,$17,$36,$55,$74,$93,$B2,$D1,$F0 
-                        	   347: 
-                        	   348: ; hi byte CRC lookup table (should be page aligned)
-                        	   349: ;		*= $7E00
-                        	   350: ;crchi
-                        	   351: ; .byte $00,$10,$20,$30,$40,$50,$60,$70,$81,$91,$A1,$B1,$C1,$D1,$E1,$F1
-                        	   352: ; .byte $12,$02,$32,$22,$52,$42,$72,$62,$93,$83,$B3,$A3,$D3,$C3,$F3,$E3
-                        	   353: ; .byte $24,$34,$04,$14,$64,$74,$44,$54,$A5,$B5,$85,$95,$E5,$F5,$C5,$D5
-                        	   354: ; .byte $36,$26,$16,$06,$76,$66,$56,$46,$B7,$A7,$97,$87,$F7,$E7,$D7,$C7
-                        	   355: ; .byte $48,$58,$68,$78,$08,$18,$28,$38,$C9,$D9,$E9,$F9,$89,$99,$A9,$B9
-                        	   356: ; .byte $5A,$4A,$7A,$6A,$1A,$0A,$3A,$2A,$DB,$CB,$FB,$EB,$9B,$8B,$BB,$AB
-                        	   357: ; .byte $6C,$7C,$4C,$5C,$2C,$3C,$0C,$1C,$ED,$FD,$CD,$DD,$AD,$BD,$8D,$9D
-                        	   358: ; .byte $7E,$6E,$5E,$4E,$3E,$2E,$1E,$0E,$FF,$EF,$DF,$CF,$BF,$AF,$9F,$8F
-                        	   359: ; .byte $91,$81,$B1,$A1,$D1,$C1,$F1,$E1,$10,$00,$30,$20,$50,$40,$70,$60
-                        	   360: ; .byte $83,$93,$A3,$B3,$C3,$D3,$E3,$F3,$02,$12,$22,$32,$42,$52,$62,$72
-                        	   361: ; .byte $B5,$A5,$95,$85,$F5,$E5,$D5,$C5,$34,$24,$14,$04,$74,$64,$54,$44
-                        	   362: ; .byte $A7,$B7,$87,$97,$E7,$F7,$C7,$D7,$26,$36,$06,$16,$66,$76,$46,$56
-                        	   363: ; .byte $D9,$C9,$F9,$E9,$99,$89,$B9,$A9,$58,$48,$78,$68,$18,$08,$38,$28
-                        	   364: ; .byte $CB,$DB,$EB,$FB,$8B,$9B,$AB,$BB,$4A,$5A,$6A,$7A,$0A,$1A,$2A,$3A
-                        	   365: ; .byte $FD,$ED,$DD,$CD,$BD,$AD,$9D,$8D,$7C,$6C,$5C,$4C,$3C,$2C,$1C,$0C
-                        	   366: ; .byte $EF,$FF,$CF,$DF,$AF,$BF,$8F,$9F,$6E,$7E,$4E,$5E,$2E,$3E,$0E,$1E 
-                        	   367: ;
+                        	   277: ;
+00:F9B1 4539            	   278: UpdCrc		eor 	crc+1 		; Quick CRC computation with lookup tables
+00:F9B3 AA              	   279:        		tax		 	; updates the two bytes at crc & crc+1
+00:F9B4 A538            	   280:        		lda 	crc		; with the byte send in the "A" register
+00:F9B6 5D007F          	   281:        		eor 	CRCHI,X
+00:F9B9 8539            	   282:        		sta 	crc+1
+00:F9BB BD007E          	   283:       	 	lda 	CRCLO,X
+00:F9BE 8538            	   284:        		sta 	crc
+00:F9C0 60              	   285:        		rts
+                        	   286: ;
+                        	   287: ; Alternate solution is to build the two lookup tables at run-time.  This might
+                        	   288: ; be desirable if the program is running from ram to reduce binary upload time.
+                        	   289: ; The following code generates the data for the lookup tables.  You would need to
+                        	   290: ; un-comment the variable declarations for crclo & crchi in the Tables and Constants
+                        	   291: ; section above and call this routine to build the tables before calling the
+                        	   292: ; "xmodem" routine.
+                        	   293: ;
+                        	   294: MAKECRCTABLE
+00:F9C1 A200            	   295: 		ldx 	#$00
+00:F9C3 8A              	   296: 		txa
+00:F9C4 9D007E          	   297: zeroloop	sta 	crclo,x
+00:F9C7 9D007F          	   298: 		sta 	crchi,x
+00:F9CA E8              	   299: 		inx
+00:F9CB D0F7            	   300: 		bne	zeroloop
+00:F9CD A200            	   301: 		ldx	#$00
+00:F9CF 8A              	   302: fetch		txa
+00:F9D0 5D007F          	   303: 		eor	crchi,x
+00:F9D3 9D007F          	   304: 		sta	crchi,x
+00:F9D6 A008            	   305: 		ldy	#$08
+00:F9D8 1E007E          	   306: fetch1		asl	crclo,x
+00:F9DB 3E007F          	   307: 		rol	crchi,x
+00:F9DE 9010            	   308: 		bcc	fetch2
+00:F9E0 BD007F          	   309: 		lda	crchi,x
+00:F9E3 4910            	   310: 		eor	#$10
+00:F9E5 9D007F          	   311: 		sta	crchi,x
+00:F9E8 BD007E          	   312: 		lda	crclo,x
+00:F9EB 4921            	   313: 		eor	#$21
+00:F9ED 9D007E          	   314: 		sta	crclo,x
+00:F9F0 88              	   315: fetch2		dey
+00:F9F1 D0E5            	   316: 		bne	fetch1
+00:F9F3 E8              	   317: 		inx
+00:F9F4 D0D9            	   318: 		bne	fetch
+00:F9F6 60              	   319: 		rts
+                        	   320: ;
+                        	   321: ; The following tables are used to calculate the CRC for the 128 bytes
+                        	   322: ; in the xmodem data blocks.  You can use these tables if you plan to 
+                        	   323: ; store this program in ROM.  If you choose to build them at run-time, 
+                        	   324: ; then just delete them and define the two labels: crclo & crchi.
+                        	   325: ;
+                        	   326: ; low byte CRC lookup table (should be page aligned)
+                        	   327: ;		*= $7D00
+                        	   328: ;crclo
+                        	   329: ; .byte $00,$21,$42,$63,$84,$A5,$C6,$E7,$08,$29,$4A,$6B,$8C,$AD,$CE,$EF
+                        	   330: ; .byte $31,$10,$73,$52,$B5,$94,$F7,$D6,$39,$18,$7B,$5A,$BD,$9C,$FF,$DE
+                        	   331: ; .byte $62,$43,$20,$01,$E6,$C7,$A4,$85,$6A,$4B,$28,$09,$EE,$CF,$AC,$8D
+                        	   332: ; .byte $53,$72,$11,$30,$D7,$F6,$95,$B4,$5B,$7A,$19,$38,$DF,$FE,$9D,$BC
+                        	   333: ; .byte $C4,$E5,$86,$A7,$40,$61,$02,$23,$CC,$ED,$8E,$AF,$48,$69,$0A,$2B
+                        	   334: ; .byte $F5,$D4,$B7,$96,$71,$50,$33,$12,$FD,$DC,$BF,$9E,$79,$58,$3B,$1A
+                        	   335: ; .byte $A6,$87,$E4,$C5,$22,$03,$60,$41,$AE,$8F,$EC,$CD,$2A,$0B,$68,$49
+                        	   336: ; .byte $97,$B6,$D5,$F4,$13,$32,$51,$70,$9F,$BE,$DD,$FC,$1B,$3A,$59,$78
+                        	   337: ; .byte $88,$A9,$CA,$EB,$0C,$2D,$4E,$6F,$80,$A1,$C2,$E3,$04,$25,$46,$67
+                        	   338: ; .byte $B9,$98,$FB,$DA,$3D,$1C,$7F,$5E,$B1,$90,$F3,$D2,$35,$14,$77,$56
+                        	   339: ; .byte $EA,$CB,$A8,$89,$6E,$4F,$2C,$0D,$E2,$C3,$A0,$81,$66,$47,$24,$05
+                        	   340: ; .byte $DB,$FA,$99,$B8,$5F,$7E,$1D,$3C,$D3,$F2,$91,$B0,$57,$76,$15,$34
+                        	   341: ; .byte $4C,$6D,$0E,$2F,$C8,$E9,$8A,$AB,$44,$65,$06,$27,$C0,$E1,$82,$A3
+                        	   342: ; .byte $7D,$5C,$3F,$1E,$F9,$D8,$BB,$9A,$75,$54,$37,$16,$F1,$D0,$B3,$92
+                        	   343: ; .byte $2E,$0F,$6C,$4D,$AA,$8B,$E8,$C9,$26,$07,$64,$45,$A2,$83,$E0,$C1
+                        	   344: ; .byte $1F,$3E,$5D,$7C,$9B,$BA,$D9,$F8,$17,$36,$55,$74,$93,$B2,$D1,$F0 
+                        	   345: 
+                        	   346: ; hi byte CRC lookup table (should be page aligned)
+                        	   347: ;		*= $7E00
+                        	   348: ;crchi
+                        	   349: ; .byte $00,$10,$20,$30,$40,$50,$60,$70,$81,$91,$A1,$B1,$C1,$D1,$E1,$F1
+                        	   350: ; .byte $12,$02,$32,$22,$52,$42,$72,$62,$93,$83,$B3,$A3,$D3,$C3,$F3,$E3
+                        	   351: ; .byte $24,$34,$04,$14,$64,$74,$44,$54,$A5,$B5,$85,$95,$E5,$F5,$C5,$D5
+                        	   352: ; .byte $36,$26,$16,$06,$76,$66,$56,$46,$B7,$A7,$97,$87,$F7,$E7,$D7,$C7
+                        	   353: ; .byte $48,$58,$68,$78,$08,$18,$28,$38,$C9,$D9,$E9,$F9,$89,$99,$A9,$B9
+                        	   354: ; .byte $5A,$4A,$7A,$6A,$1A,$0A,$3A,$2A,$DB,$CB,$FB,$EB,$9B,$8B,$BB,$AB
+                        	   355: ; .byte $6C,$7C,$4C,$5C,$2C,$3C,$0C,$1C,$ED,$FD,$CD,$DD,$AD,$BD,$8D,$9D
+                        	   356: ; .byte $7E,$6E,$5E,$4E,$3E,$2E,$1E,$0E,$FF,$EF,$DF,$CF,$BF,$AF,$9F,$8F
+                        	   357: ; .byte $91,$81,$B1,$A1,$D1,$C1,$F1,$E1,$10,$00,$30,$20,$50,$40,$70,$60
+                        	   358: ; .byte $83,$93,$A3,$B3,$C3,$D3,$E3,$F3,$02,$12,$22,$32,$42,$52,$62,$72
+                        	   359: ; .byte $B5,$A5,$95,$85,$F5,$E5,$D5,$C5,$34,$24,$14,$04,$74,$64,$54,$44
+                        	   360: ; .byte $A7,$B7,$87,$97,$E7,$F7,$C7,$D7,$26,$36,$06,$16,$66,$76,$46,$56
+                        	   361: ; .byte $D9,$C9,$F9,$E9,$99,$89,$B9,$A9,$58,$48,$78,$68,$18,$08,$38,$28
+                        	   362: ; .byte $CB,$DB,$EB,$FB,$8B,$9B,$AB,$BB,$4A,$5A,$6A,$7A,$0A,$1A,$2A,$3A
+                        	   363: ; .byte $FD,$ED,$DD,$CD,$BD,$AD,$9D,$8D,$7C,$6C,$5C,$4C,$3C,$2C,$1C,$0C
+                        	   364: ; .byte $EF,$FF,$CF,$DF,$AF,$BF,$8F,$9F,$6E,$7E,$4E,$5E,$2E,$3E,$0E,$1E 
+                        	   365: ;
+                        	   366: ;
+                        	   367: ; End of File
                         	   368: ;
-                        	   369: ; End of File
-                        	   370: ;
-                        	   371: 
+                        	   369: 
 
 Source: "sbc.asm"
                         	    21: 	
@@ -487,7 +500,7 @@ Source: "SbcOS.asm"
                         	     3: ;
                         	     4: ; ----------------- assembly instructions ---------------------------- 
                         	     5: ;               *=   $E800                ; start of operating system
-00:FA0E 4C51FB          	     6: Start_OS       jmp   MonitorBoot         ; easy access to monitor program
+00:F9F7 4C3AFB          	     6: Start_OS       jmp   MonitorBoot         ; easy access to monitor program
                         	     7: ;
                         	     8: ;
                         	     9: ;*********************************************************************       
@@ -521,9 +534,9 @@ Source: "SbcOS.asm"
                         	    37: SPTR           =     $03e5             ; hold stack pointer
                         	    38: PREG           =     $03e6             ; hold status register (P)
                         	    39: ;
-00:FA11 4C24F8          	    40: Input_chr      jmp   ACIA1_input       ; wait for input character
-00:FA14 4C2FF8          	    41: Scan_input     jmp   ACIA1_scan        ; scan for input (no wait), C=1 char, C=0 no character
-00:FA17 4C3CF8          	    42: Output         jmp   ACIA1_Output      ; send 1 character
+00:F9FA 4C3DF8          	    40: Input_chr      jmp   ACIA1_input       ; wait for input character
+00:F9FD 4C48F8          	    41: Scan_input     jmp   ACIA1_scan        ; scan for input (no wait), C=1 char, C=0 no character
+00:FA00 4C54F8          	    42: Output         jmp   ACIA1_Output      ; send 1 character
                         	    43: ;
                         	    44: ;               
                         	    45: ; *************************************************************************
@@ -547,155 +560,155 @@ Source: "SbcOS.asm"
                         	    63: ; Delay        - delay loop
                         	    64: ; *************************************************************************
                         	    65: ;
-00:FA1A 2050433D2020413D	    66: RegData        .byte" PC=  A=  X=  Y=  S=  P= (NVRBDIZC)="
-00:FA22 2020583D2020593D
-00:FA2A 2020533D2020503D
-00:FA32 20284E5652424449
-00:FA3A 5A43293D
+00:FA03 2050433D2020413D	    66: RegData        .byte" PC=  A=  X=  Y=  S=  P= (NVRBDIZC)="
+00:FA0B 2020583D2020593D
+00:FA13 2020533D2020503D
+00:FA1B 20284E5652424449
+00:FA23 5A43293D
                         	    67: ;
-00:FA3E 2076FA          	    68: PrintReg       Jsr   Print_CR          ; Lead with a CR
-00:FA41 A2FF            	    69:                ldx   #$ff              ;
-00:FA43 A0FF            	    70:                ldy   #$ff              ;
-00:FA45 C8              	    71: Printreg1      iny                     ;
-00:FA46 B91AFA          	    72:                lda   Regdata,y         ;
-00:FA49 2017FA          	    73:                jsr   Output            ;
-00:FA4C C93D            	    74:                cmp   #$3D              ; "="
-00:FA4E D0F5            	    75:                bne   Printreg1         ;
-00:FA50 E8              	    76: Printreg2      inx                     ;
-00:FA51 E007            	    77:                cpx   #$07              ;
-00:FA53 F00C            	    78:                beq   Printreg3         ; done with first 6
-00:FA55 BDE003          	    79:                lda   PCH,x             ;  
-00:FA58 2087FA          	    80:                jsr   Print1Byte        ;
-00:FA5B E000            	    81:                cpx   #$00              ;
-00:FA5D D0E6            	    82:                bne   Printreg1         ;
-00:FA5F F0EF            	    83:                beq   Printreg2         ;
-00:FA61 CA              	    84: Printreg3      dex                     ;
-00:FA62 BDE003          	    85:                lda   PCH,x             ; get Preg
-00:FA65 A208            	    86:                ldx   #$08              ; 
-00:FA67 2A              	    87: Printreg4      rol                     ;
-00:FA68 A8              	    88:                tay                     ;
-00:FA69 A931            	    89:                lda   #$31              ;
-00:FA6B B002            	    90:                bcs   Printreg5         ;
-00:FA6D E900            	    91:                sbc   #$00              ; clc implied:subtract 1
-00:FA6F 2017FA          	    92: Printreg5      jsr   Output            ;
-00:FA72 98              	    93:                tya                     ;
-00:FA73 CA              	    94:                dex                     ;
-00:FA74 D0F1            	    95:                bne   Printreg4         ;
+00:FA27 205FFA          	    68: PrintReg       Jsr   Print_CR          ; Lead with a CR
+00:FA2A A2FF            	    69:                ldx   #$ff              ;
+00:FA2C A0FF            	    70:                ldy   #$ff              ;
+00:FA2E C8              	    71: Printreg1      iny                     ;
+00:FA2F B903FA          	    72:                lda   Regdata,y         ;
+00:FA32 2000FA          	    73:                jsr   Output            ;
+00:FA35 C93D            	    74:                cmp   #$3D              ; "="
+00:FA37 D0F5            	    75:                bne   Printreg1         ;
+00:FA39 E8              	    76: Printreg2      inx                     ;
+00:FA3A E007            	    77:                cpx   #$07              ;
+00:FA3C F00C            	    78:                beq   Printreg3         ; done with first 6
+00:FA3E BDE003          	    79:                lda   PCH,x             ;  
+00:FA41 2070FA          	    80:                jsr   Print1Byte        ;
+00:FA44 E000            	    81:                cpx   #$00              ;
+00:FA46 D0E6            	    82:                bne   Printreg1         ;
+00:FA48 F0EF            	    83:                beq   Printreg2         ;
+00:FA4A CA              	    84: Printreg3      dex                     ;
+00:FA4B BDE003          	    85:                lda   PCH,x             ; get Preg
+00:FA4E A208            	    86:                ldx   #$08              ; 
+00:FA50 2A              	    87: Printreg4      rol                     ;
+00:FA51 A8              	    88:                tay                     ;
+00:FA52 A931            	    89:                lda   #$31              ;
+00:FA54 B002            	    90:                bcs   Printreg5         ;
+00:FA56 E900            	    91:                sbc   #$00              ; clc implied:subtract 1
+00:FA58 2000FA          	    92: Printreg5      jsr   Output            ;
+00:FA5B 98              	    93:                tya                     ;
+00:FA5C CA              	    94:                dex                     ;
+00:FA5D D0F1            	    95:                bne   Printreg4         ;
                         	    96: ; fall into the print CR routine
-00:FA76 48              	    97: Print_CR       PHA                     ; Save Acc
-00:FA77 A90D            	    98:                LDA   #$0D              ; "cr"
-00:FA79 2017FA          	    99:                JSR   OUTPUT            ; send it
-00:FA7C A90A            	   100:                LDA   #$0A              ; "lf"
-00:FA7E 2017FA          	   101:                JSR   OUTPUT            ; send it
-00:FA81 68              	   102:                PLA                     ; Restore Acc
-00:FA82 60              	   103:                RTS                     ; 
+00:FA5F 48              	    97: Print_CR       PHA                     ; Save Acc
+00:FA60 A90D            	    98:                LDA   #$0D              ; "cr"
+00:FA62 2000FA          	    99:                JSR   OUTPUT            ; send it
+00:FA65 A90A            	   100:                LDA   #$0A              ; "lf"
+00:FA67 2000FA          	   101:                JSR   OUTPUT            ; send it
+00:FA6A 68              	   102:                PLA                     ; Restore Acc
+00:FA6B 60              	   103:                RTS                     ; 
                         	   104: 
-00:FA83 2087FA          	   105: Print2Byte     JSR   Print1Byte        ;  prints AAXX hex digits
-00:FA86 8A              	   106:                TXA                     ;
-00:FA87 48              	   107: Print1Byte     PHA                     ;  prints AA hex digits
-00:FA88 4A              	   108:                LSR                     ;  MOVE UPPER NIBBLE TO LOWER
-00:FA89 4A              	   109:                LSR                     ;
-00:FA8A 4A              	   110:                LSR                     ;
-00:FA8B 4A              	   111:                LSR                     ;
-00:FA8C 2090FA          	   112:                JSR   PrintDig          ;
-00:FA8F 68              	   113:                PLA                     ;
-00:FA90 8431            	   114: PrintDig       sty   ysav              ;  prints A hex nibble (low 4 bits)
-00:FA92 290F            	   115:                AND   #$0F              ;
-00:FA94 A8              	   116:                TAY                     ;
-00:FA95 B904FD          	   117:                LDA   Hexdigdata,Y      ;
-00:FA98 A431            	   118:                ldy   ysav              ;
-00:FA9A 4C17FA          	   119:                jmp   output            ;
-00:FA9D 20A9FA          	   120: PrintXSP1      JSR   Print1SP          ;
-00:FAA0 CA              	   121:                dex                     ;
-00:FAA1 E000            	   122: PrintXSP       cpx   #$00              ;
-00:FAA3 D0F8            	   123:                bne   PrintXSP1         ;
-00:FAA5 60              	   124:                rts                     ;
-00:FAA6 20A9FA          	   125: Print2SP       jsr   Print1SP          ; print 2 SPACES
-00:FAA9 A920            	   126: Print1SP       LDA   #$20              ; print 1 SPACE
-00:FAAB 4C17FA          	   127:                JMP   OUTPUT            ;
+00:FA6C 2070FA          	   105: Print2Byte     JSR   Print1Byte        ;  prints AAXX hex digits
+00:FA6F 8A              	   106:                TXA                     ;
+00:FA70 48              	   107: Print1Byte     PHA                     ;  prints AA hex digits
+00:FA71 4A              	   108:                LSR                     ;  MOVE UPPER NIBBLE TO LOWER
+00:FA72 4A              	   109:                LSR                     ;
+00:FA73 4A              	   110:                LSR                     ;
+00:FA74 4A              	   111:                LSR                     ;
+00:FA75 2079FA          	   112:                JSR   PrintDig          ;
+00:FA78 68              	   113:                PLA                     ;
+00:FA79 8431            	   114: PrintDig       sty   ysav              ;  prints A hex nibble (low 4 bits)
+00:FA7B 290F            	   115:                AND   #$0F              ;
+00:FA7D A8              	   116:                TAY                     ;
+00:FA7E B9EDFC          	   117:                LDA   Hexdigdata,Y      ;
+00:FA81 A431            	   118:                ldy   ysav              ;
+00:FA83 4C00FA          	   119:                jmp   output            ;
+00:FA86 2092FA          	   120: PrintXSP1      JSR   Print1SP          ;
+00:FA89 CA              	   121:                dex                     ;
+00:FA8A E000            	   122: PrintXSP       cpx   #$00              ;
+00:FA8C D0F8            	   123:                bne   PrintXSP1         ;
+00:FA8E 60              	   124:                rts                     ;
+00:FA8F 2092FA          	   125: Print2SP       jsr   Print1SP          ; print 2 SPACES
+00:FA92 A920            	   126: Print1SP       LDA   #$20              ; print 1 SPACE
+00:FA94 4C00FA          	   127:                JMP   OUTPUT            ;
                         	   128: ;
-00:FAAE A93E            	   129: Input          lda   #$3E              ; Monitor Prompt ">"
-00:FAB0 8532            	   130:                sta   Prompt            ; save prompt chr 
-00:FAB2 2076FA          	   131: Input1         jsr   Print_CR          ; New Line
-00:FAB5 A532            	   132:                lda   Prompt            ; get prompt
-00:FAB7 2017FA          	   133:                jsr   Output            ; Print Prompt
-00:FABA A0FF            	   134:                ldy   #$ff              ; pointer
-00:FABC 2011FA          	   135: InputWait      jsr   Input_Chr         ; get a character
-00:FABF C920            	   136:                cmp   #$20              ; is ctrl char?
-00:FAC1 B03E            	   137:                BCS   InputSave         ; no, echo chr 
-00:FAC3 C90D            	   138:                cmp   #$0d              ; cr
-00:FAC5 F04C            	   139:                Beq   InputDone         ; done
-00:FAC7 C91B            	   140:                cmp   #$1B              ; esc
-00:FAC9 F0E7            	   141:                beq   Input1            ; cancel and new line
-00:FACB C908            	   142:                cmp   #$08              ; bs
-00:FACD F009            	   143:                beq   backspace         ;
-00:FACF C909            	   144:                cmp   #$09              ; TAB key
-00:FAD1 F01C            	   145:                beq   tabkey            ;
-00:FAD3 C902            	   146:                cmp   #$02              ; Ctrl-B
-00:FAD5 D0E5            	   147:                bne   InputWait         ; Ignore other codes
-00:FAD7 00              	   148:                brk                     ; Force a keyboard Break cmd
-00:FAD8 C0FF            	   149: backspace      cpy   #$ff              ;
-00:FADA F0E0            	   150:                beq   InputWait         ; nothing to do
-00:FADC 88              	   151:                dey                     ; remove last char
-00:FADD A908            	   152:                Lda   #$08              ; backup one space
-00:FADF 2017FA          	   153:                jsr   Output            ;
-00:FAE2 A920            	   154:                Lda   #$20              ; Print space (destructive BS)
-00:FAE4 2017FA          	   155:                jsr   Output            ;
-00:FAE7 A908            	   156:                Lda   #$08              ; backup one space
-00:FAE9 2017FA          	   157:                jsr   Output            ;
-00:FAEC 4CBCFA          	   158:                jmp   InputWait         ; ready for next key
-00:FAEF A920            	   159: tabkey         lda   #$20              ; convert tab to space
-00:FAF1 C8              	   160:                iny                     ; move cursor
-00:FAF2 3020            	   161:                bmi   InputTooLong      ; line too long?
-00:FAF4 990003          	   162:                sta   Buffer,y          ; no, save space in buffer
-00:FAF7 2017FA          	   163:                jsr   output            ; print the space too
-00:FAFA 98              	   164:                tya                     ; test to see if tab is on multiple of 8
-00:FAFB 2907            	   165:                and   #$07              ; mask remainder of cursor/8
-00:FAFD D0F0            	   166:                bne   tabkey            ; not done, add another space
-00:FAFF F0BB            	   167:                beq   InputWait         ; done. 
-00:FB01 C961            	   168: InputSave      CMP   #$61              ;   ucase
-00:FB03 9002            	   169:                BCC   InputSave1        ;
-00:FB05 E920            	   170:                SBC   #$20              ;
-00:FB07 C8              	   171: InputSave1     INY                     ;
-00:FB08 300A            	   172:                BMI   InputTooLong      ; get next char (up to 127)
-00:FB0A 990003          	   173:                STA   Buffer,y          ;
-00:FB0D 2017FA          	   174:                JSR   Output            ; OutputCharacter
-00:FB10 4CBCFA          	   175:                jmp   InputWait         ;
-00:FB13 C8              	   176: InputDone      INY                     ;
-00:FB14 A90D            	   177: InputTooLong   LDA   #$0d              ; force CR at end of 128 characters 
-00:FB16 990003          	   178:                sta   Buffer,y          ;
-00:FB19 2017FA          	   179:                JSR   Output            ;
+00:FA97 A93E            	   129: Input          lda   #$3E              ; Monitor Prompt ">"
+00:FA99 8532            	   130:                sta   Prompt            ; save prompt chr 
+00:FA9B 205FFA          	   131: Input1         jsr   Print_CR          ; New Line
+00:FA9E A532            	   132:                lda   Prompt            ; get prompt
+00:FAA0 2000FA          	   133:                jsr   Output            ; Print Prompt
+00:FAA3 A0FF            	   134:                ldy   #$ff              ; pointer
+00:FAA5 20FAF9          	   135: InputWait      jsr   Input_Chr         ; get a character
+00:FAA8 C920            	   136:                cmp   #$20              ; is ctrl char?
+00:FAAA B03E            	   137:                BCS   InputSave         ; no, echo chr 
+00:FAAC C90D            	   138:                cmp   #$0d              ; cr
+00:FAAE F04C            	   139:                Beq   InputDone         ; done
+00:FAB0 C91B            	   140:                cmp   #$1B              ; esc
+00:FAB2 F0E7            	   141:                beq   Input1            ; cancel and new line
+00:FAB4 C908            	   142:                cmp   #$08              ; bs
+00:FAB6 F009            	   143:                beq   backspace         ;
+00:FAB8 C909            	   144:                cmp   #$09              ; TAB key
+00:FABA F01C            	   145:                beq   tabkey            ;
+00:FABC C902            	   146:                cmp   #$02              ; Ctrl-B
+00:FABE D0E5            	   147:                bne   InputWait         ; Ignore other codes
+00:FAC0 00              	   148:                brk                     ; Force a keyboard Break cmd
+00:FAC1 C0FF            	   149: backspace      cpy   #$ff              ;
+00:FAC3 F0E0            	   150:                beq   InputWait         ; nothing to do
+00:FAC5 88              	   151:                dey                     ; remove last char
+00:FAC6 A908            	   152:                Lda   #$08              ; backup one space
+00:FAC8 2000FA          	   153:                jsr   Output            ;
+00:FACB A920            	   154:                Lda   #$20              ; Print space (destructive BS)
+00:FACD 2000FA          	   155:                jsr   Output            ;
+00:FAD0 A908            	   156:                Lda   #$08              ; backup one space
+00:FAD2 2000FA          	   157:                jsr   Output            ;
+00:FAD5 4CA5FA          	   158:                jmp   InputWait         ; ready for next key
+00:FAD8 A920            	   159: tabkey         lda   #$20              ; convert tab to space
+00:FADA C8              	   160:                iny                     ; move cursor
+00:FADB 3020            	   161:                bmi   InputTooLong      ; line too long?
+00:FADD 990003          	   162:                sta   Buffer,y          ; no, save space in buffer
+00:FAE0 2000FA          	   163:                jsr   output            ; print the space too
+00:FAE3 98              	   164:                tya                     ; test to see if tab is on multiple of 8
+00:FAE4 2907            	   165:                and   #$07              ; mask remainder of cursor/8
+00:FAE6 D0F0            	   166:                bne   tabkey            ; not done, add another space
+00:FAE8 F0BB            	   167:                beq   InputWait         ; done. 
+00:FAEA C961            	   168: InputSave      CMP   #$61              ;   ucase
+00:FAEC 9002            	   169:                BCC   InputSave1        ;
+00:FAEE E920            	   170:                SBC   #$20              ;
+00:FAF0 C8              	   171: InputSave1     INY                     ;
+00:FAF1 300A            	   172:                BMI   InputTooLong      ; get next char (up to 127)
+00:FAF3 990003          	   173:                STA   Buffer,y          ;
+00:FAF6 2000FA          	   174:                JSR   Output            ; OutputCharacter
+00:FAF9 4CA5FA          	   175:                jmp   InputWait         ;
+00:FAFC C8              	   176: InputDone      INY                     ;
+00:FAFD A90D            	   177: InputTooLong   LDA   #$0d              ; force CR at end of 128 characters 
+00:FAFF 990003          	   178:                sta   Buffer,y          ;
+00:FB02 2000FA          	   179:                JSR   Output            ;
                         	   180: ;               lda   #$0a              ; lf Char   
                         	   181: ;               JSR   Output            ;
-00:FB1C 60              	   182:                RTS                     ;
+00:FB05 60              	   182:                RTS                     ;
                         	   183: ;
-00:FB1D A907            	   184: bell           LDA  #$07               ; Ctrl G Bell
-00:FB1F 4C17FA          	   185:                jmp  Output             ; 
+00:FB06 A907            	   184: bell           LDA  #$07               ; Ctrl G Bell
+00:FB08 4C00FA          	   185:                jmp  Output             ; 
                         	   186: ;
-00:FB22 8DE203          	   187: BRKroutine     sta   ACC               ; save A    Monitor"s break handler
-00:FB25 8EE303          	   188:                stx   Xreg              ; save X
-00:FB28 8CE403          	   189:                sty   Yreg              ; save Y
-00:FB2B 68              	   190:                pla                     ; 
-00:FB2C 8DE603          	   191:                sta   Preg              ; save P
-00:FB2F 68              	   192:                pla                     ; PCL
-00:FB30 A8              	   193:                tay
-00:FB31 68              	   194:                pla                     ; PCH
-00:FB32 AA              	   195:                tax
-00:FB33 98              	   196:                tya 
-00:FB34 38              	   197:                sec                     ;
-00:FB35 E902            	   198:                sbc   #$02              ;
-00:FB37 8DE103          	   199:                sta   PCL               ; backup to BRK cmd
-00:FB3A B001            	   200:                bcs   Brk2              ;
-00:FB3C CA              	   201:                dex                     ;
-00:FB3D 8EE003          	   202: Brk2           stx   PCH               ; save PC
-00:FB40 BA              	   203:                TSX                     ; get stack pointer
-00:FB41 8EE503          	   204:                stx   SPtr              ; save stack pointer
-00:FB44 201DFB          	   205:                jsr   Bell              ; Beep speaker
-00:FB47 203EFA          	   206:                jsr   PrintReg          ; dump register contents 
-00:FB4A A2FF            	   207:                ldx   #$FF              ; 
-00:FB4C 9A              	   208:                txs                     ; clear stack
-00:FB4D 58              	   209:                cli                     ; enable interrupts again
-00:FB4E 4C57FB          	   210:                jmp   Monitor           ; start the monitor
+00:FB0B 8DE203          	   187: BRKroutine     sta   ACC               ; save A    Monitor"s break handler
+00:FB0E 8EE303          	   188:                stx   Xreg              ; save X
+00:FB11 8CE403          	   189:                sty   Yreg              ; save Y
+00:FB14 68              	   190:                pla                     ; 
+00:FB15 8DE603          	   191:                sta   Preg              ; save P
+00:FB18 68              	   192:                pla                     ; PCL
+00:FB19 A8              	   193:                tay
+00:FB1A 68              	   194:                pla                     ; PCH
+00:FB1B AA              	   195:                tax
+00:FB1C 98              	   196:                tya 
+00:FB1D 38              	   197:                sec                     ;
+00:FB1E E902            	   198:                sbc   #$02              ;
+00:FB20 8DE103          	   199:                sta   PCL               ; backup to BRK cmd
+00:FB23 B001            	   200:                bcs   Brk2              ;
+00:FB25 CA              	   201:                dex                     ;
+00:FB26 8EE003          	   202: Brk2           stx   PCH               ; save PC
+00:FB29 BA              	   203:                TSX                     ; get stack pointer
+00:FB2A 8EE503          	   204:                stx   SPtr              ; save stack pointer
+00:FB2D 2006FB          	   205:                jsr   Bell              ; Beep speaker
+00:FB30 2027FA          	   206:                jsr   PrintReg          ; dump register contents 
+00:FB33 A2FF            	   207:                ldx   #$FF              ; 
+00:FB35 9A              	   208:                txs                     ; clear stack
+00:FB36 58              	   209:                cli                     ; enable interrupts again
+00:FB37 4C40FB          	   210:                jmp   Monitor           ; start the monitor
                         	   211: 
                         	   212: ;*************************************************************************
                         	   213: ;     
@@ -703,297 +716,297 @@ Source: "SbcOS.asm"
                         	   215: ;
                         	   216: ;**************************************************************************
                         	   217: MonitorBoot    
-00:FB51 201DFB          	   218:                jsr   bell              ; beep ready
-00:FB54 20C4FB          	   219:                JSR   Version           ;
+00:FB3A 2006FB          	   218:                jsr   bell              ; beep ready
+00:FB3D 20ADFB          	   219:                JSR   Version           ;
                         	   220: SYSjmp                                 ; Added for EhBASIC
-00:FB57 A2FF            	   221: Monitor        LDX   #$FF              ; 
-00:FB59 9A              	   222:                TXS			   ;  Init the stack
-00:FB5A 20AEFA          	   223:                JSR   input             ;  line input
-00:FB5D A900            	   224:                LDA   #$00              ;
-00:FB5F A8              	   225:                TAY                     ;  set to 1st character in line
-00:FB60 8533            	   226:                sta   LineCnt           ; normal list vs range list 
-00:FB62 8537            	   227: Mon01          STA   Memchr            ;
-00:FB64 A900            	   228: Mon02          lda   #$00              ;
-00:FB66 853C            	   229:                sta   Hexdigits         ;  holds parsed hex
-00:FB68 853D            	   230:                sta   Hexdigits+1       ;
-00:FB6A 209EFB          	   231:                JSR   ParseHexDig       ;  Get any Hex chars
-00:FB6D A20B            	   232:                LDX   #CmdCount         ;  get # of cmds currently used
-00:FB6F DD14FD          	   233: Mon08          CMP   CmdAscii,X        ;  is non hex cmd chr?
-00:FB72 F005            	   234:                BEQ   Mon09             ;  yes x= cmd number
-00:FB74 CA              	   235:                DEX                     ;
-00:FB75 10F8            	   236:                BPL   Mon08             ;
-00:FB77 30DE            	   237:                bmi   Monitor           ;  no
-00:FB79 8A              	   238: Mon09          txa
-00:FB7A 48              	   239:                pha 
-00:FB7B 98              	   240:                tya
-00:FB7C 48              	   241:                pha 
-00:FB7D 8A              	   242:                TXA                     ;
-00:FB7E 0A              	   243:                ASL                     ;  ptr * 2
-00:FB7F AA              	   244:                TAX                     ;  
-00:FB80 2090FB          	   245:                JSR   Mon10             ;  Execute cmd
-00:FB83 68              	   246:                pla
-00:FB84 A8              	   247:                tay
-00:FB85 68              	   248:                pla
-00:FB86 AA              	   249:                tax 
-00:FB87 F0CE            	   250:                BEQ   Monitor           ;  done
-00:FB89 BD38FD          	   251:                LDA   Cmdseccode,X      ;  
-00:FB8C 30D6            	   252:                BMI   Mon02             ;
-00:FB8E 10D2            	   253:                bpl   Mon01             ;
+00:FB40 A2FF            	   221: Monitor        LDX   #$FF              ; 
+00:FB42 9A              	   222:                TXS			   ;  Init the stack
+00:FB43 2097FA          	   223:                JSR   input             ;  line input
+00:FB46 A900            	   224:                LDA   #$00              ;
+00:FB48 A8              	   225:                TAY                     ;  set to 1st character in line
+00:FB49 8533            	   226:                sta   LineCnt           ; normal list vs range list 
+00:FB4B 8537            	   227: Mon01          STA   Memchr            ;
+00:FB4D A900            	   228: Mon02          lda   #$00              ;
+00:FB4F 853C            	   229:                sta   Hexdigits         ;  holds parsed hex
+00:FB51 853D            	   230:                sta   Hexdigits+1       ;
+00:FB53 2087FB          	   231:                JSR   ParseHexDig       ;  Get any Hex chars
+00:FB56 A20B            	   232:                LDX   #CmdCount         ;  get # of cmds currently used
+00:FB58 DDFDFC          	   233: Mon08          CMP   CmdAscii,X        ;  is non hex cmd chr?
+00:FB5B F005            	   234:                BEQ   Mon09             ;  yes x= cmd number
+00:FB5D CA              	   235:                DEX                     ;
+00:FB5E 10F8            	   236:                BPL   Mon08             ;
+00:FB60 30DE            	   237:                bmi   Monitor           ;  no
+00:FB62 8A              	   238: Mon09          txa
+00:FB63 48              	   239:                pha 
+00:FB64 98              	   240:                tya
+00:FB65 48              	   241:                pha 
+00:FB66 8A              	   242:                TXA                     ;
+00:FB67 0A              	   243:                ASL                     ;  ptr * 2
+00:FB68 AA              	   244:                TAX                     ;  
+00:FB69 2079FB          	   245:                JSR   Mon10             ;  Execute cmd
+00:FB6C 68              	   246:                pla
+00:FB6D A8              	   247:                tay
+00:FB6E 68              	   248:                pla
+00:FB6F AA              	   249:                tax 
+00:FB70 F0CE            	   250:                BEQ   Monitor           ;  done
+00:FB72 BD21FD          	   251:                LDA   Cmdseccode,X      ;  
+00:FB75 30D6            	   252:                BMI   Mon02             ;
+00:FB77 10D2            	   253:                bpl   Mon01             ;
                         	   254: Mon10          
-00:FB90 BD20FD          	   255:                lda   Cmdjmptbl,X
-00:FB93 8534            	   256:                sta   Modejmp 
-00:FB95 E8              	   257:                inx
-00:FB96 BD20FD          	   258:                lda   Cmdjmptbl,X 
-00:FB99 48              	   259:                pha
-00:FB9A A534            	   260:                lda   Modejmp 
-00:FB9C 48              	   261:                pha
-00:FB9D 60              	   262:                rts
+00:FB79 BD09FD          	   255:                lda   Cmdjmptbl,X
+00:FB7C 8534            	   256:                sta   Modejmp 
+00:FB7E E8              	   257:                inx
+00:FB7F BD09FD          	   258:                lda   Cmdjmptbl,X 
+00:FB82 48              	   259:                pha
+00:FB83 A534            	   260:                lda   Modejmp 
+00:FB85 48              	   261:                pha
+00:FB86 60              	   262:                rts
                         	   263: ;               JMP   (Cmdjmptbl,X)     ;
                         	   264: ;--------------- Routines used by the Monitor commands ----------------------
-00:FB9E A900            	   265: ParseHexDig    lda   #$00
-00:FBA0 8535            	   266:                sta   Hexdigcnt         ;  cntr
-00:FBA2 4CB5FB          	   267:                jmp   ParseHex05        ;
-00:FBA5 8A              	   268: ParseHex03     TXA                     ;  parse hex dig
-00:FBA6 A204            	   269:                LDX   #$04              ;  
-00:FBA8 063C            	   270: ParseHex04     ASL   Hexdigits         ;
-00:FBAA 263D            	   271:                ROL   Hexdigits+1       ;
-00:FBAC CA              	   272:                DEX                     ;
-00:FBAD D0F9            	   273:                BNE   ParseHex04        ;
-00:FBAF 053C            	   274:                ora   Hexdigits         ;
-00:FBB1 853C            	   275:                sta   Hexdigits         ;
-00:FBB3 C635            	   276:                DEC   Hexdigcnt         ;
-00:FBB5 B90003          	   277: ParseHex05     LDA   buffer,Y          ;
-00:FBB8 A20F            	   278:                LDX   #$0F              ;   is hex chr?
-00:FBBA C8              	   279:                INY                     ;
-00:FBBB DD04FD          	   280: ParseHex07     CMP   Hexdigdata,X      ;
-00:FBBE F0E5            	   281:                BEQ   ParseHex03        ;   yes
-00:FBC0 CA              	   282:                DEX                     ;
-00:FBC1 10F8            	   283:                BPL   ParseHex07        ;
-00:FBC3 60              	   284:                RTS                     ; Stored in HexDigits if HexDigCnt <> 0
+00:FB87 A900            	   265: ParseHexDig    lda   #$00
+00:FB89 8535            	   266:                sta   Hexdigcnt         ;  cntr
+00:FB8B 4C9EFB          	   267:                jmp   ParseHex05        ;
+00:FB8E 8A              	   268: ParseHex03     TXA                     ;  parse hex dig
+00:FB8F A204            	   269:                LDX   #$04              ;  
+00:FB91 063C            	   270: ParseHex04     ASL   Hexdigits         ;
+00:FB93 263D            	   271:                ROL   Hexdigits+1       ;
+00:FB95 CA              	   272:                DEX                     ;
+00:FB96 D0F9            	   273:                BNE   ParseHex04        ;
+00:FB98 053C            	   274:                ora   Hexdigits         ;
+00:FB9A 853C            	   275:                sta   Hexdigits         ;
+00:FB9C C635            	   276:                DEC   Hexdigcnt         ;
+00:FB9E B90003          	   277: ParseHex05     LDA   buffer,Y          ;
+00:FBA1 A20F            	   278:                LDX   #$0F              ;   is hex chr?
+00:FBA3 C8              	   279:                INY                     ;
+00:FBA4 DDEDFC          	   280: ParseHex07     CMP   Hexdigdata,X      ;
+00:FBA7 F0E5            	   281:                BEQ   ParseHex03        ;   yes
+00:FBA9 CA              	   282:                DEX                     ;
+00:FBAA 10F8            	   283:                BPL   ParseHex07        ;
+00:FBAC 60              	   284:                RTS                     ; Stored in HexDigits if HexDigCnt <> 0
                         	   285: ;
-00:FBC4 2076FA          	   286: Version        jsr   Print_CR          ; 
-00:FBC7 A2FF            	   287:                ldx   #$FF              ; set txt pointer
-00:FBC9 A90D            	   288:                lda   #$0d              ; 
-00:FBCB E8              	   289: PortReadyMsg   inx                     ;
-00:FBCC 2017FA          	   290:                JSR   Output            ; put character to Port
-00:FBCF BD44FD          	   291:                lda   porttxt,x         ; get message text
-00:FBD2 D0F7            	   292:                bne   PortReadyMsg      ; 
-00:FBD4 60              	   293:                rts                     ;
+00:FBAD 205FFA          	   286: Version        jsr   Print_CR          ; 
+00:FBB0 A2FF            	   287:                ldx   #$FF              ; set txt pointer
+00:FBB2 A90D            	   288:                lda   #$0d              ; 
+00:FBB4 E8              	   289: PortReadyMsg   inx                     ;
+00:FBB5 2000FA          	   290:                JSR   Output            ; put character to Port
+00:FBB8 BD2DFD          	   291:                lda   porttxt,x         ; get message text
+00:FBBB D0F7            	   292:                bne   PortReadyMsg      ; 
+00:FBBD 60              	   293:                rts                     ;
                         	   294: ;
-00:FBD5 20DEFB          	   295: Excute_cmd     jsr   exe1              ;
-00:FBD8 A2FF            	   296:                ldx   #$FF              ; reset stack
-00:FBDA 9A              	   297:                txs                     ;
-00:FBDB 4C57FB          	   298:                jmp   Monitor           ;
-00:FBDE 6C3C00          	   299: exe1           JMP   (Hexdigits)       ;
+00:FBBE 20C7FB          	   295: Excute_cmd     jsr   exe1              ;
+00:FBC1 A2FF            	   296:                ldx   #$FF              ; reset stack
+00:FBC3 9A              	   297:                txs                     ;
+00:FBC4 4C40FB          	   298:                jmp   Monitor           ;
+00:FBC7 6C3C00          	   299: exe1           JMP   (Hexdigits)       ;
                         	   300: ;
-00:FBE1 A63C            	   301: DOT_cmd        LDX   Hexdigits         ; move address to addrptr
-00:FBE3 A53D            	   302:                LDA   Hexdigits+1       ;
-00:FBE5 863A            	   303:                STX   Addrptr           ;
-00:FBE7 853B            	   304:                STA   Addrptr+1         ;
-00:FBE9 E633            	   305:                inc   LineCnt           ; range list command
-00:FBEB 60              	   306:                RTS                     ;
+00:FBCA A63C            	   301: DOT_cmd        LDX   Hexdigits         ; move address to addrptr
+00:FBCC A53D            	   302:                LDA   Hexdigits+1       ;
+00:FBCE 863A            	   303:                STX   Addrptr           ;
+00:FBD0 853B            	   304:                STA   Addrptr+1         ;
+00:FBD2 E633            	   305:                inc   LineCnt           ; range list command
+00:FBD4 60              	   306:                RTS                     ;
                         	   307: ;
-00:FBEC C001            	   308: CR_cmd         CPY   #$01              ;
-00:FBEE D00D            	   309:                BNE   SP_cmd            ;
-00:FBF0 A53A            	   310:                LDA   Addrptr           ; CR alone - move addrptr to hexdigits
-00:FBF2 090F            	   311:                ORA   #$0F              ;  to simulate entering an address
-00:FBF4 853C            	   312:                STA   Hexdigits         ; *** change 07 to 0f for 16 byte/line
-00:FBF6 A53B            	   313:                LDA   Addrptr+1         ;
-00:FBF8 853D            	   314:                STA   Hexdigits+1       ;
-00:FBFA 4C17FC          	   315:                jmp   SP_cmd2           ;
-00:FBFD A535            	   316: SP_cmd         LDA   Hexdigcnt         ; Space command entry
-00:FBFF F063            	   317:                BEQ   SP_cmd5           ; any digits to process? no - done
-00:FC01 A637            	   318:                LDX   Memchr            ; yes - is sec cmd code 0 ? yes - 
-00:FC03 F00C            	   319:                BEQ   SP_cmd1           ; yes - 
-00:FC05 CA              	   320:                DEX                     ; Is sec cmd = 1?       
-00:FC06 F021            	   321:                BEQ   SP_cmd3           ;       yes - is sec cmd code 1 ?
-00:FC08 A53C            	   322:                LDA   Hexdigits         ;             no - ":" cmd processed
-00:FC0A A200            	   323:                ldx   #$00
-00:FC0C 813A            	   324:                STA   (Addrptr,x)       ;
-00:FC0E 4C85FC          	   325:                JMP   Inc_addrptr       ; set to next address and return
-00:FC11 20E1FB          	   326: SP_cmd1        JSR   DOT_cmd           ; sec dig = 0  move address to addrptr
-00:FC14 4C29FC          	   327:                jmp   SP_cmd3           ;
-00:FC17 A53A            	   328: SP_cmd2        LDA   Addrptr           ; CR cmd entry 
-00:FC19 290F            	   329:                and   #$0F              ; *** changed 07 to 0F for 16 bytes/line
-00:FC1B F00C            	   330:                BEQ   SP_cmd3           ; if 16, print new line
-00:FC1D C000            	   331:                cpy   #$00              ; if TXT cmd, don"t print the - or spaces between chrs
-00:FC1F F04E            	   332:                beq   TXT_cmd1          ;
-00:FC21 A53A            	   333:                LDA   Addrptr           ; CR cmd entry 
-00:FC23 2907            	   334:                and   #$07              ; if 8, print -
-00:FC25 F011            	   335:                BEQ   SP_cmd33          ;
-00:FC27 D019            	   336:                bne   SP_cmd4           ; else print next byte
-00:FC29 2076FA          	   337: SP_cmd3        JSR   Print_CR          ; "." cmd - display address and data 
-00:FC2C 2014FA          	   338:                jsr   Scan_Input        ; see if brk requested
-00:FC2F B02F            	   339:                bcs   SP_brk            ; if so, stop 
-00:FC31 A53B            	   340:                LDA   Addrptr+1         ; print address
-00:FC33 A63A            	   341:                LDX   Addrptr           ;
-00:FC35 2083FA          	   342:                JSR   Print2Byte        ;
-00:FC38 A920            	   343: SP_cmd33       LDA   #$20              ; " " print 1 - 16 bytes of data
-00:FC3A 2017FA          	   344:                JSR   OUTPUT            ;
-00:FC3D A92D            	   345:                LDA   #$2D              ; "-"
-00:FC3F 2017FA          	   346:                JSR   OUTPUT            ;
-00:FC42 A920            	   347: SP_cmd4        LDA   #$20              ; " " 
-00:FC44 2017FA          	   348:                JSR   OUTPUT            ;
-00:FC47 C000            	   349:                cpy   #$00              ;
-00:FC49 F024            	   350:                beq   TXT_Cmd1          ;
-00:FC4B A200            	   351:                ldx   #$00              ;
-00:FC4D A13A            	   352:                LDA   (Addrptr,x)       ;
-00:FC4F 2087FA          	   353:                JSR   Print1Byte        ;
-00:FC52 38              	   354: SP_cmd44       SEC                     ;  checks if range done
-00:FC53 A53A            	   355:                LDA   Addrptr           ;
-00:FC55 E53C            	   356:                SBC   Hexdigits         ;
-00:FC57 A53B            	   357:                LDA   Addrptr+1         ;
-00:FC59 E53D            	   358:                SBC   Hexdigits+1       ;
-00:FC5B 2085FC          	   359:                jsr   Inc_addrptr       ;
-00:FC5E 90B7            	   360:                BCC   SP_cmd2           ; loop until range done
-00:FC60 A900            	   361: SP_brk         lda   #$00
-00:FC62 8537            	   362:                sta   Memchr            ; reset sec cmd code
-00:FC64 60              	   363: SP_cmd5        RTS                     ; done or no digits to process
+00:FBD5 C001            	   308: CR_cmd         CPY   #$01              ;
+00:FBD7 D00D            	   309:                BNE   SP_cmd            ;
+00:FBD9 A53A            	   310:                LDA   Addrptr           ; CR alone - move addrptr to hexdigits
+00:FBDB 090F            	   311:                ORA   #$0F              ;  to simulate entering an address
+00:FBDD 853C            	   312:                STA   Hexdigits         ; *** change 07 to 0f for 16 byte/line
+00:FBDF A53B            	   313:                LDA   Addrptr+1         ;
+00:FBE1 853D            	   314:                STA   Hexdigits+1       ;
+00:FBE3 4C00FC          	   315:                jmp   SP_cmd2           ;
+00:FBE6 A535            	   316: SP_cmd         LDA   Hexdigcnt         ; Space command entry
+00:FBE8 F063            	   317:                BEQ   SP_cmd5           ; any digits to process? no - done
+00:FBEA A637            	   318:                LDX   Memchr            ; yes - is sec cmd code 0 ? yes - 
+00:FBEC F00C            	   319:                BEQ   SP_cmd1           ; yes - 
+00:FBEE CA              	   320:                DEX                     ; Is sec cmd = 1?       
+00:FBEF F021            	   321:                BEQ   SP_cmd3           ;       yes - is sec cmd code 1 ?
+00:FBF1 A53C            	   322:                LDA   Hexdigits         ;             no - ":" cmd processed
+00:FBF3 A200            	   323:                ldx   #$00
+00:FBF5 813A            	   324:                STA   (Addrptr,x)       ;
+00:FBF7 4C6EFC          	   325:                JMP   Inc_addrptr       ; set to next address and return
+00:FBFA 20CAFB          	   326: SP_cmd1        JSR   DOT_cmd           ; sec dig = 0  move address to addrptr
+00:FBFD 4C12FC          	   327:                jmp   SP_cmd3           ;
+00:FC00 A53A            	   328: SP_cmd2        LDA   Addrptr           ; CR cmd entry 
+00:FC02 290F            	   329:                and   #$0F              ; *** changed 07 to 0F for 16 bytes/line
+00:FC04 F00C            	   330:                BEQ   SP_cmd3           ; if 16, print new line
+00:FC06 C000            	   331:                cpy   #$00              ; if TXT cmd, don"t print the - or spaces between chrs
+00:FC08 F04E            	   332:                beq   TXT_cmd1          ;
+00:FC0A A53A            	   333:                LDA   Addrptr           ; CR cmd entry 
+00:FC0C 2907            	   334:                and   #$07              ; if 8, print -
+00:FC0E F011            	   335:                BEQ   SP_cmd33          ;
+00:FC10 D019            	   336:                bne   SP_cmd4           ; else print next byte
+00:FC12 205FFA          	   337: SP_cmd3        JSR   Print_CR          ; "." cmd - display address and data 
+00:FC15 20FDF9          	   338:                jsr   Scan_Input        ; see if brk requested
+00:FC18 B02F            	   339:                bcs   SP_brk            ; if so, stop 
+00:FC1A A53B            	   340:                LDA   Addrptr+1         ; print address
+00:FC1C A63A            	   341:                LDX   Addrptr           ;
+00:FC1E 206CFA          	   342:                JSR   Print2Byte        ;
+00:FC21 A920            	   343: SP_cmd33       LDA   #$20              ; " " print 1 - 16 bytes of data
+00:FC23 2000FA          	   344:                JSR   OUTPUT            ;
+00:FC26 A92D            	   345:                LDA   #$2D              ; "-"
+00:FC28 2000FA          	   346:                JSR   OUTPUT            ;
+00:FC2B A920            	   347: SP_cmd4        LDA   #$20              ; " " 
+00:FC2D 2000FA          	   348:                JSR   OUTPUT            ;
+00:FC30 C000            	   349:                cpy   #$00              ;
+00:FC32 F024            	   350:                beq   TXT_Cmd1          ;
+00:FC34 A200            	   351:                ldx   #$00              ;
+00:FC36 A13A            	   352:                LDA   (Addrptr,x)       ;
+00:FC38 2070FA          	   353:                JSR   Print1Byte        ;
+00:FC3B 38              	   354: SP_cmd44       SEC                     ;  checks if range done
+00:FC3C A53A            	   355:                LDA   Addrptr           ;
+00:FC3E E53C            	   356:                SBC   Hexdigits         ;
+00:FC40 A53B            	   357:                LDA   Addrptr+1         ;
+00:FC42 E53D            	   358:                SBC   Hexdigits+1       ;
+00:FC44 206EFC          	   359:                jsr   Inc_addrptr       ;
+00:FC47 90B7            	   360:                BCC   SP_cmd2           ; loop until range done
+00:FC49 A900            	   361: SP_brk         lda   #$00
+00:FC4B 8537            	   362:                sta   Memchr            ; reset sec cmd code
+00:FC4D 60              	   363: SP_cmd5        RTS                     ; done or no digits to process
                         	   364: ;
-00:FC65 8431            	   365: TXT_cmd        sty   ysav              ;
-00:FC67 A000            	   366:                ldy   #$00              ;
-00:FC69 20FDFB          	   367:                jsr   SP_cmd            ;
-00:FC6C A431            	   368:                ldy   ysav              ;
-00:FC6E 60              	   369:                RTS                     ;
-00:FC6F A200            	   370: TXT_cmd1       ldx   #$00 
-00:FC71 A13A            	   371:                LDA   (Addrptr,x)       ;
-00:FC73 297F            	   372:                AND   #$7F              ;
-00:FC75 C97F            	   373:                CMP   #$7F              ;
-00:FC77 F004            	   374:                BEQ   TXT_Cmd2          ;
-00:FC79 C920            	   375:                CMP   #$20              ; " "
-00:FC7B B002            	   376:                BCS   TXT_Cmd3          ;
-00:FC7D A92E            	   377: TXT_Cmd2       LDA   #$2E              ; "." use "." if not printable char
-00:FC7F 2017FA          	   378: TXT_Cmd3       JSR   OUTPUT            ;
-00:FC82 4C52FC          	   379:                jmp   SP_cmd44          ;
+00:FC4E 8431            	   365: TXT_cmd        sty   ysav              ;
+00:FC50 A000            	   366:                ldy   #$00              ;
+00:FC52 20E6FB          	   367:                jsr   SP_cmd            ;
+00:FC55 A431            	   368:                ldy   ysav              ;
+00:FC57 60              	   369:                RTS                     ;
+00:FC58 A200            	   370: TXT_cmd1       ldx   #$00 
+00:FC5A A13A            	   371:                LDA   (Addrptr,x)       ;
+00:FC5C 297F            	   372:                AND   #$7F              ;
+00:FC5E C97F            	   373:                CMP   #$7F              ;
+00:FC60 F004            	   374:                BEQ   TXT_Cmd2          ;
+00:FC62 C920            	   375:                CMP   #$20              ; " "
+00:FC64 B002            	   376:                BCS   TXT_Cmd3          ;
+00:FC66 A92E            	   377: TXT_Cmd2       LDA   #$2E              ; "." use "." if not printable char
+00:FC68 2000FA          	   378: TXT_Cmd3       JSR   OUTPUT            ;
+00:FC6B 4C3BFC          	   379:                jmp   SP_cmd44          ;
                         	   380: ;
-00:FC85 E63A            	   381: Inc_addrptr    INC   Addrptr           ;  increments addrptr
-00:FC87 D002            	   382:                BNE   Inc_addr1         ;
-00:FC89 E63B            	   383:                INC   Addrptr+1         ;
-00:FC8B 60              	   384: Inc_addr1      RTS                     ;
+00:FC6E E63A            	   381: Inc_addrptr    INC   Addrptr           ;  increments addrptr
+00:FC70 D002            	   382:                BNE   Inc_addr1         ;
+00:FC72 E63B            	   383:                INC   Addrptr+1         ;
+00:FC74 60              	   384: Inc_addr1      RTS                     ;
                         	   385: ;
-00:FC8C A533            	   386: Insert_Cmd     lda   Linecnt           ;  "I" cmd code
-00:FC8E F040            	   387:                beq   Insert_3          ; abort if no . cmd entered
-00:FC90 38              	   388:                sec                     ;
-00:FC91 A53C            	   389:                lda   Hexdigits         ;
-00:FC93 E53A            	   390:                sbc   addrptr           ;
-00:FC95 AA              	   391:                tax                     ;
-00:FC96 A53D            	   392:                lda   Hexdigits+1       ;
-00:FC98 E53B            	   393:                sbc   addrptr+1         ;
-00:FC9A A8              	   394:                tay                     ;
-00:FC9B 9033            	   395:                bcc   Insert_3          ;
-00:FC9D 18              	   396:                clc                     ;
-00:FC9E 8A              	   397:                txa                     ;
-00:FC9F 653E            	   398:                adc   memptr            ;
-00:FCA1 853C            	   399:                sta   Hexdigits         ;
-00:FCA3 98              	   400:                tya                     ;
-00:FCA4 653F            	   401:                adc   memptr+1          ;
-00:FCA6 853D            	   402:                sta   Hexdigits+1       ;
-00:FCA8 A200            	   403: Insert_0       ldx   #$00
-00:FCAA A13E            	   404:                LDA   (memptr,x)        ;
-00:FCAC 813C            	   405:                STA   (Hexdigits,x)     ;
-00:FCAE A9FF            	   406:                lda   #$FF              ;
-00:FCB0 C63C            	   407:                DEC   Hexdigits         ;  
-00:FCB2 C53C            	   408:                cmp   Hexdigits         ;  
-00:FCB4 D002            	   409:                BNE   Insert_1          ;
-00:FCB6 C63D            	   410:                DEC   Hexdigits+1       ;
-00:FCB8 C63E            	   411: Insert_1       dec   Memptr            ;  
-00:FCBA C53E            	   412:                cmp   Memptr            ;
-00:FCBC D002            	   413:                bne   Insert_2          ;
-00:FCBE C63F            	   414:                dec   Memptr+1          ;
-00:FCC0 38              	   415: Insert_2       SEC                     ;  
-00:FCC1 A53E            	   416:                LDA   memptr            ;
-00:FCC3 E53A            	   417:                SBC   Addrptr           ;
-00:FCC5 A53F            	   418:                LDA   memptr+1          ;
-00:FCC7 E53B            	   419:                SBC   Addrptr+1         ;
-00:FCC9 9005            	   420:                bcc   Insert_3          ;
-00:FCCB 2014FA          	   421:                jsr   Scan_Input        ; see if brk requested
-00:FCCE 90D8            	   422:                bcc   Insert_0          ; if so, stop List
-00:FCD0 60              	   423: Insert_3       RTS                     ;
+00:FC75 A533            	   386: Insert_Cmd     lda   Linecnt           ;  "I" cmd code
+00:FC77 F040            	   387:                beq   Insert_3          ; abort if no . cmd entered
+00:FC79 38              	   388:                sec                     ;
+00:FC7A A53C            	   389:                lda   Hexdigits         ;
+00:FC7C E53A            	   390:                sbc   addrptr           ;
+00:FC7E AA              	   391:                tax                     ;
+00:FC7F A53D            	   392:                lda   Hexdigits+1       ;
+00:FC81 E53B            	   393:                sbc   addrptr+1         ;
+00:FC83 A8              	   394:                tay                     ;
+00:FC84 9033            	   395:                bcc   Insert_3          ;
+00:FC86 18              	   396:                clc                     ;
+00:FC87 8A              	   397:                txa                     ;
+00:FC88 653E            	   398:                adc   memptr            ;
+00:FC8A 853C            	   399:                sta   Hexdigits         ;
+00:FC8C 98              	   400:                tya                     ;
+00:FC8D 653F            	   401:                adc   memptr+1          ;
+00:FC8F 853D            	   402:                sta   Hexdigits+1       ;
+00:FC91 A200            	   403: Insert_0       ldx   #$00
+00:FC93 A13E            	   404:                LDA   (memptr,x)        ;
+00:FC95 813C            	   405:                STA   (Hexdigits,x)     ;
+00:FC97 A9FF            	   406:                lda   #$FF              ;
+00:FC99 C63C            	   407:                DEC   Hexdigits         ;  
+00:FC9B C53C            	   408:                cmp   Hexdigits         ;  
+00:FC9D D002            	   409:                BNE   Insert_1          ;
+00:FC9F C63D            	   410:                DEC   Hexdigits+1       ;
+00:FCA1 C63E            	   411: Insert_1       dec   Memptr            ;  
+00:FCA3 C53E            	   412:                cmp   Memptr            ;
+00:FCA5 D002            	   413:                bne   Insert_2          ;
+00:FCA7 C63F            	   414:                dec   Memptr+1          ;
+00:FCA9 38              	   415: Insert_2       SEC                     ;  
+00:FCAA A53E            	   416:                LDA   memptr            ;
+00:FCAC E53A            	   417:                SBC   Addrptr           ;
+00:FCAE A53F            	   418:                LDA   memptr+1          ;
+00:FCB0 E53B            	   419:                SBC   Addrptr+1         ;
+00:FCB2 9005            	   420:                bcc   Insert_3          ;
+00:FCB4 20FDF9          	   421:                jsr   Scan_Input        ; see if brk requested
+00:FCB7 90D8            	   422:                bcc   Insert_0          ; if so, stop List
+00:FCB9 60              	   423: Insert_3       RTS                     ;
                         	   424: ;
-00:FCD1 A533            	   425: Move_cmd       lda   Linecnt           ; *** any changes to this routine affect EEPROM_WR too!!!
-00:FCD3 D00D            	   426:                bne   Move_cmd3         ; abort if no . cmd was used
-00:FCD5 60              	   427: Move_brk       RTS                     ;
-00:FCD6 E63A            	   428: Move_cmd1      INC   Addrptr           ;  increments addrptr
-00:FCD8 D002            	   429:                BNE   Move_cmd2         ;
-00:FCDA E63B            	   430:                INC   Addrptr+1         ;
-00:FCDC E63C            	   431: Move_cmd2      inc   Hexdigits         ;  "M" cmd code
-00:FCDE D002            	   432:                bne   Move_cmd3         ;
-00:FCE0 E63D            	   433:                inc   Hexdigits+1       ;
-00:FCE2 38              	   434: Move_cmd3      SEC                     ;  checks if range done
-00:FCE3 A53E            	   435:                LDA   Memptr            ;
-00:FCE5 E53A            	   436:                SBC   Addrptr           ;
-00:FCE7 A53F            	   437:                LDA   Memptr+1          ;
-00:FCE9 E53B            	   438:                SBC   Addrptr+1         ;
-00:FCEB 90E8            	   439:                BCC   Move_brk          ;  exit if range done
-00:FCED 2014FA          	   440:                jsr   Scan_Input        ; see if brk requested
-00:FCF0 B0E3            	   441:                bcs   Move_brk          ; 
-00:FCF2 A200            	   442:                ldx   #$00
-00:FCF4 A13A            	   443:                LDA   (Addrptr,x)       ;  Moves one byte
-00:FCF6 813C            	   444:                STA   (Hexdigits,x)     ;
-00:FCF8 4CD6FC          	   445:                jmp   Move_cmd1         ; (zapped after move from eeprom_wr)
+00:FCBA A533            	   425: Move_cmd       lda   Linecnt           ; *** any changes to this routine affect EEPROM_WR too!!!
+00:FCBC D00D            	   426:                bne   Move_cmd3         ; abort if no . cmd was used
+00:FCBE 60              	   427: Move_brk       RTS                     ;
+00:FCBF E63A            	   428: Move_cmd1      INC   Addrptr           ;  increments addrptr
+00:FCC1 D002            	   429:                BNE   Move_cmd2         ;
+00:FCC3 E63B            	   430:                INC   Addrptr+1         ;
+00:FCC5 E63C            	   431: Move_cmd2      inc   Hexdigits         ;  "M" cmd code
+00:FCC7 D002            	   432:                bne   Move_cmd3         ;
+00:FCC9 E63D            	   433:                inc   Hexdigits+1       ;
+00:FCCB 38              	   434: Move_cmd3      SEC                     ;  checks if range done
+00:FCCC A53E            	   435:                LDA   Memptr            ;
+00:FCCE E53A            	   436:                SBC   Addrptr           ;
+00:FCD0 A53F            	   437:                LDA   Memptr+1          ;
+00:FCD2 E53B            	   438:                SBC   Addrptr+1         ;
+00:FCD4 90E8            	   439:                BCC   Move_brk          ;  exit if range done
+00:FCD6 20FDF9          	   440:                jsr   Scan_Input        ; see if brk requested
+00:FCD9 B0E3            	   441:                bcs   Move_brk          ; 
+00:FCDB A200            	   442:                ldx   #$00
+00:FCDD A13A            	   443:                LDA   (Addrptr,x)       ;  Moves one byte
+00:FCDF 813C            	   444:                STA   (Hexdigits,x)     ;
+00:FCE1 4CBFFC          	   445:                jmp   Move_cmd1         ; (zapped after move from eeprom_wr)
                         	   446: ;
-00:FCFB A63C            	   447: Dest_cmd       LDX   Hexdigits         ;  ">" cmd code
-00:FCFD A53D            	   448:                LDA   Hexdigits+1       ;
-00:FCFF 863E            	   449:                STX   Memptr            ;  move address to memptr
-00:FD01 853F            	   450:                STA   Memptr+1          ;
-00:FD03 60              	   451:                RTS                     ;  
+00:FCE4 A63C            	   447: Dest_cmd       LDX   Hexdigits         ;  ">" cmd code
+00:FCE6 A53D            	   448:                LDA   Hexdigits+1       ;
+00:FCE8 863E            	   449:                STX   Memptr            ;  move address to memptr
+00:FCEA 853F            	   450:                STA   Memptr+1          ;
+00:FCEC 60              	   451:                RTS                     ;  
                         	   452:                                        ;
                         	   453: ;
                         	   454: ;-----------DATA TABLES ------------------------------------------------
                         	   455: ;
-00:FD04 3031323334353637	   456: Hexdigdata     .byte "0123456789ABCDEF";hex char table 
-00:FD0C 3839414243444546
+00:FCED 3031323334353637	   456: Hexdigdata     .byte "0123456789ABCDEF";hex char table 
+00:FCF5 3839414243444546
                         	   457: ;     
                         	   458: CmdCount       =$0b                    ; number of commands to scan for
-00:FD14 0D              	   459: CmdAscii       .byte $0D               ; 0 enter    cmd codes
-00:FD15 20              	   460:                .byte $20               ; 1 SPACE
-00:FD16 2E              	   461:                .byte $2E               ; 2 .
-00:FD17 3A              	   462:                .byte $3A               ; 3 :
-00:FD18 3E              	   463:                .byte $3E               ; 4 >  
-00:FD19 47              	   464:                .byte $47               ; 5 g - Go
-00:FD1A 49              	   465:                .byte $49               ; 6 i - Insert
-00:FD1B 4D              	   466:                .byte $4D               ; 7 m - Move
-00:FD1C 51              	   467:                .byte $51               ; 8 q - Query memory (text dump)
-00:FD1D 52              	   468:                .byte $52               ; 9 r - Registers
-00:FD1E 56              	   469:                .byte $56               ; a v - Version
-00:FD1F 58              	   470: 		.byte $58		; b x - Xmodem receive
+00:FCFD 0D              	   459: CmdAscii       .byte $0D               ; 0 enter    cmd codes
+00:FCFE 20              	   460:                .byte $20               ; 1 SPACE
+00:FCFF 2E              	   461:                .byte $2E               ; 2 .
+00:FD00 3A              	   462:                .byte $3A               ; 3 :
+00:FD01 3E              	   463:                .byte $3E               ; 4 >  
+00:FD02 47              	   464:                .byte $47               ; 5 g - Go
+00:FD03 49              	   465:                .byte $49               ; 6 i - Insert
+00:FD04 4D              	   466:                .byte $4D               ; 7 m - Move
+00:FD05 51              	   467:                .byte $51               ; 8 q - Query memory (text dump)
+00:FD06 52              	   468:                .byte $52               ; 9 r - Registers
+00:FD07 56              	   469:                .byte $56               ; a v - Version
+00:FD08 58              	   470: 		.byte $58		; b x - Xmodem receive
                         	   471: 
                         	   472: ;     
-00:FD20 EBFB            	   473: Cmdjmptbl      .word CR_cmd-1            ; 0  enter   cmd jmp table
-00:FD22 FCFB            	   474:                .word SP_cmd-1            ; 1   space
-00:FD24 E0FB            	   475:                .word DOT_cmd-1           ; 2    .
-00:FD26 E0FB            	   476:                .word DOT_cmd-1           ; 3    :
-00:FD28 FAFC            	   477:                .word Dest_cmd-1          ; 4    >  
-00:FD2A D4FB            	   478:                .word Excute_cmd-1        ; 5    g
-00:FD2C 8BFC            	   479:                .word Insert_Cmd-1        ; 6    i
-00:FD2E D0FC            	   480:                .word Move_cmd-1          ; 7    m
-00:FD30 64FC            	   481:                .word TXT_cmd-1           ; 8    q
-00:FD32 3DFA            	   482:                .word Printreg-1          ; 9    r
-00:FD34 C3FB            	   483:                .word Version-1           ; a    v
-00:FD36 48F8            	   484: 		.word Xmodem-1		 ; b	x
+00:FD09 D4FB            	   473: Cmdjmptbl      .word CR_cmd-1            ; 0  enter   cmd jmp table
+00:FD0B E5FB            	   474:                .word SP_cmd-1            ; 1   space
+00:FD0D C9FB            	   475:                .word DOT_cmd-1           ; 2    .
+00:FD0F C9FB            	   476:                .word DOT_cmd-1           ; 3    :
+00:FD11 E3FC            	   477:                .word Dest_cmd-1          ; 4    >  
+00:FD13 BDFB            	   478:                .word Excute_cmd-1        ; 5    g
+00:FD15 74FC            	   479:                .word Insert_Cmd-1        ; 6    i
+00:FD17 B9FC            	   480:                .word Move_cmd-1          ; 7    m
+00:FD19 4DFC            	   481:                .word TXT_cmd-1           ; 8    q
+00:FD1B 26FA            	   482:                .word Printreg-1          ; 9    r
+00:FD1D ACFB            	   483:                .word Version-1           ; a    v
+00:FD1F 60F8            	   484: 		.word Xmodem-1		 ; b	x
                         	   485: ;     
-00:FD38 00              	   486: Cmdseccode     .byte $00               ; 0   enter       secondary command table
-00:FD39 FF              	   487:                .byte $FF               ; 1   sp
-00:FD3A 01              	   488:                .byte $01               ; 2   .
-00:FD3B 02              	   489:                .byte $02               ; 3   :
-00:FD3C 00              	   490:                .byte $00               ; 4   > 
-00:FD3D 00              	   491:                .byte $00               ; 5   g
-00:FD3E 00              	   492:                .byte $00               ; 6   i
-00:FD3F 00              	   493:                .byte $00               ; 7   m
-00:FD40 00              	   494:                .byte $00               ; 8   q
-00:FD41 00              	   495:                .byte $00               ; 9   r
-00:FD42 00              	   496:                .byte $00               ; a   v
-00:FD43 00              	   497: 		.byte $00		; b   x
+00:FD21 00              	   486: Cmdseccode     .byte $00               ; 0   enter       secondary command table
+00:FD22 FF              	   487:                .byte $FF               ; 1   sp
+00:FD23 01              	   488:                .byte $01               ; 2   .
+00:FD24 02              	   489:                .byte $02               ; 3   :
+00:FD25 00              	   490:                .byte $00               ; 4   > 
+00:FD26 00              	   491:                .byte $00               ; 5   g
+00:FD27 00              	   492:                .byte $00               ; 6   i
+00:FD28 00              	   493:                .byte $00               ; 7   m
+00:FD29 00              	   494:                .byte $00               ; 8   q
+00:FD2A 00              	   495:                .byte $00               ; 9   r
+00:FD2B 00              	   496:                .byte $00               ; a   v
+00:FD2C 00              	   497: 		.byte $00		; b   x
                         	   498: ;
                         	   499: ;
-00:FD44 3635433032204D6F	   500: Porttxt        .byte "65C02 Monitor v5.1.1 (7-4-13) Ready"
-00:FD4C 6E69746F72207635
-00:FD54 2E312E312028372D
-00:FD5C 342D313329205265
-00:FD64 616479
-00:FD67 0D              	   501:                .byte  $0d, $0a
-00:FD68 0A
-00:FD69 00              	   502:                .byte $00
+00:FD2D 3635433032204D6F	   500: Porttxt        .byte "65C02 Monitor v5.1.1 (7-4-13) Ready"
+00:FD35 6E69746F72207635
+00:FD3D 2E312E312028372D
+00:FD45 342D313329205265
+00:FD4D 616479
+00:FD50 0D              	   501:                .byte  $0d, $0a
+00:FD51 0A
+00:FD52 00              	   502:                .byte $00
                         	   503: ;
                         	   504: ; *** VERSION Notes ***
                         	   505: ; 3.5 added the text dump command, "q"
@@ -1026,43 +1039,60 @@ Source: "reset.asm"
                         	     5: ;****************************************************************************
                         	     6: ;               *= $FF00             ; put this in last page of ROM
                         	     7: 
-                        	     8: ;--------------Reset handler----------------------------------------------
-00:FD6A 78              	     9: Reset          SEI                     ; diable interupts
-00:FD6B D8              	    10:                CLD                     ; clear decimal mode                      
-00:FD6C A2FF            	    11:                LDX   #$FF              ;
-00:FD6E 9A              	    12:                TXS                     ; init stack pointer
-00:FD6F 2000F8          	    13:                jsr   ACIA1_init	       ; init the I/O devices
-                        	    14: 
-00:FD72 58              	    15:                CLI                     ; Enable interrupt system
-00:FD73 4C51FB          	    16:                JMP  MonitorBoot        ; Monitor for cold reset                       
-                        	    17: ;
-00:FD76 48              	    18: Interrupt      PHA                     ; a
-00:FD77 8A              	    19:                TXA  	               ; 
-00:FD78 48              	    20:                PHA                     ; X
-00:FD79 BA              	    21:                TSX                     ; get stack pointer
-00:FD7A BD0301          	    22:                LDA   $0103,X           ; load INT-P Reg off stack
-00:FD7D 2910            	    23:                AND   #$10              ; mask BRK
-00:FD7F D004            	    24:                BNE   BrkCmd            ; BRK CMD
-00:FD81 68              	    25:                PLA                     ; x
-00:FD82 AA              	    26:                tax                     ; 		
-00:FD83 68              	    27:                pla                     ; a
-00:FD84 40              	    28: NMIjump        RTI                     ; Null Interrupt return
-00:FD85 68              	    29: BrkCmd         pla                     ; X
-00:FD86 AA              	    30:                tax                     ;
-00:FD87 68              	    31:                pla                     ; A
-00:FD88 4C22FB          	    32:                jmp   BRKroutine        ; patch in user BRK routine
-                        	    33: 
-                        	    34: ;
-                        	    35: ;  NMIjmp      =     $FFFA             
-                        	    36: ;  RESjmp      =     $FFFC             
-                        	    37: ;  INTjmp      =     $FFFE             
-                        	    38: 
-                        	    39:                *=    $FFFA
-01:FFFA 84FD            	    40:                .word  NMIjump
-01:FFFC 6AFD            	    41:                .word  Reset 
-01:FFFE 76FD            	    42:                .word  Interrupt
-                        	    43: ;end of file
-                        	    44: 
+                        	     8: 
+                        	     9: ;--------------Reset handler----------------------------------------------
+00:FD53 78              	    10: Reset          SEI                     ; diable interupts
+00:FD54 D8              	    11:                CLD                     ; clear decimal mode                      
+00:FD55 A2FF            	    12:                LDX   #$FF              ;
+00:FD57 9A              	    13:                TXS                     ; init stack pointer
+00:FD58 2015F8          	    14:                jsr   ACIA1_init	       ; init the I/O devices
+                        	    15: 
+00:FD5B 58              	    16:                CLI                     ; Enable interrupt system
+00:FD5C 4C3AFB          	    17:                JMP  MonitorBoot        ; Monitor for cold reset                       
+                        	    18: ;
+00:FD5F 48              	    19: Interrupt:     PHA                     ; a
+00:FD60 8A              	    20:                TXA  	               ; 
+00:FD61 48              	    21:                PHA                     ; X
+00:FD62 AD00E0          	    22: 		lda	ACIActl
+00:FD65 101B            	    23: 		bpl	ACIA_end	; ACIA didn't call so go to end
+00:FD67 2901            	    24: 		and	#$01		; check if data is there
+00:FD69 F01F            	    25: 		beq	ACIA_error	; no data - means an error conditon
+00:FD6B AD01E0          	    26: 		lda	ACIAdat		; ACIA has data
+00:FD6E A6FF            	    27: 		LDX  WR_ptr             ; Start with A containing the byte to put in the buffer.
+00:FD70 9D0002          	    28:          	STA  SER_buf,X          ; Get the pointer value and store the data where it says,
+00:FD73 E6FF            	    29:          	INC  WR_ptr             ; then increment the pointer for the next write.
+00:FD75 A5FE            	    30: 		lda  RD_ptr		; start with the read pointer 
+00:FD77 69E0            	    31: 		adc	#$e0		; add #e0  bytes - the permissible position of the WR_ptr
+00:FD79 C5FF            	    32: 		cmp  WR_ptr		; subtract WR_ptr 
+00:FD7B 9010            	    33: 		bcc     IRQ_cleanup	; if positive then skip, if negative then we will set RTS high
+00:FD7D A9D5            	    34:                 lda #%11010101  ; Rx int, no Tx int + RTS high, 8n1, /16
+00:FD7F 8D00E0          	    35:                 sta ACIActl     ; will result in 19200 bps
+                        	    36: 		
+00:FD82 BA              	    37: ACIA_end:      TSX                     ; get stack pointer
+00:FD83 BD0301          	    38:                LDA   $0103,X           ; load INT-P Reg off stack
+00:FD86 2910            	    39:                AND   #$10              ; mask BRK
+00:FD88 D007            	    40:                BNE   BrkCmd            ; BRK CMD
+00:FD8A 2C01E0          	    41: ACIA_error:	bit	ACIAdat		; read the data to clear interrupt
+00:FD8D 68              	    42: IRQ_cleanup:   PLA                     ; x
+00:FD8E AA              	    43:                tax                     ; 		
+00:FD8F 68              	    44:                pla                     ; a
+00:FD90 40              	    45: NMIjump        RTI                     ; Null Interrupt return
+00:FD91 68              	    46: BrkCmd         pla                     ; X
+00:FD92 AA              	    47:                tax                     ;
+00:FD93 68              	    48:                pla                     ; A
+00:FD94 4C0BFB          	    49:                jmp   BRKroutine        ; patch in user BRK routine
+                        	    50: 
+                        	    51: ;
+                        	    52: ;  NMIjmp      =     $FFFA             
+                        	    53: ;  RESjmp      =     $FFFC             
+                        	    54: ;  INTjmp      =     $FFFE             
+                        	    55: 
+                        	    56:                *=    $FFFA
+01:FFFA 90FD            	    57:                .word  NMIjump
+01:FFFC 53FD            	    58:                .word  Reset 
+01:FFFE 5FFD            	    59:                .word  Interrupt
+                        	    60: ;end of file
+                        	    61: 
 
 Source: "sbc.asm"
                         	    25: 
@@ -1071,182 +1101,191 @@ Source: "sbc.asm"
 
 Symbols by name:
 ACC                              E:03E2
-ACIA1_init                       A:F800
-ACIA1_Input                      A:F824
-ACIA1_Output                     A:F83C
-ACIA1_Scan                       A:F82F
-ACIA_noscan                      A:F83B
-ACIA_Out1                        A:F83D
+ACIA1_cmp                        A:F840
+ACIA1_init                       A:F815
+ACIA1_Input                      A:F83D
+ACIA1_Output                     A:F854
+ACIA1_Scan                       A:F848
+ACIA_end                         A:FD82
+ACIA_error                       A:FD8A
+ACIA_noscan                      A:F853
+ACIA_Out1                        A:F855
 ACIActl                          E:E000
 ACIAdat                          E:E001
 ACK                              E:0006
 Addrptr                          E:003A
-backspace                        A:FAD8
-BadCrc                           A:F8D8
-BegBlk                           A:F88A
-bell                             A:FB1D
+backspace                        A:FAC1
+BadCrc                           A:F8F0
+BegBlk                           A:F8A2
+bell                             A:FB06
 bflag                            E:003F
 blkno                            E:003C
-Brk2                             A:FB3D
-BrkCmd                           A:FD85
-BRKroutine                       A:FB22
+Brk2                             A:FB26
+BrkCmd                           A:FD91
+BRKroutine                       A:FB0B
 buffer                           E:0300
-CalcCrc                          A:F8BE
-CmdAscii                         A:FD14
+CalcCrc                          A:F8D6
+CmdAscii                         A:FCFD
 CmdCount                         E:000B
-Cmdjmptbl                        A:FD20
-Cmdseccode                       A:FD38
-CopyBlk                          A:F8FD
-CopyBlk3                         A:F8FF
-CopyBlk4                         A:F90A
+Cmdjmptbl                        A:FD09
+Cmdseccode                       A:FD21
+CopyBlk                          A:F915
+CopyBlk3                         A:F917
+CopyBlk4                         A:F922
 CR                               E:000D
-CR_cmd                           A:FBEC
+CR_cmd                           A:FBD5
 crc                              E:0038
 crch                             E:0039
 crchi                            E:7F00
 crclo                            E:7E00
-Dest_cmd                         A:FCFB
-Done                             A:F919
-DOT_cmd                          A:FBE1
+Dest_cmd                         A:FCE4
+Done                             A:F931
+DOT_cmd                          A:FBCA
 EOT                              E:0004
-ErrMsg                           A:F994
+ErrMsg                           A:F98E
 ESC                              E:001B
-Excute_cmd                       A:FBD5
-exe1                             A:FBDE
-fetch                            A:F9E6
-fetch1                           A:F9EF
-fetch2                           A:FA07
-Flush                            A:F938
-Flush1                           A:F93C
-Get_Chr                          A:F82F
-GetBlk                           A:F88C
-GetBlk1                          A:F890
-GetBlk2                          A:F895
-GetByte                          A:F925
-GetByte1                         A:F937
-GoodBlk1                         A:F8AD
-GoodBlk2                         A:F8BC
-GoodCrc                          A:F8E3
-GoodMsg                          A:F9B2
-GotByte                          A:F87A
-GotByte1                         A:F87F
+Excute_cmd                       A:FBBE
+exe1                             A:FBC7
+fetch                            A:F9CF
+fetch1                           A:F9D8
+fetch2                           A:F9F0
+Flush                            A:F950
+Flush1                           A:F954
+Get_Chr                          A:F848
+GetBlk                           A:F8A4
+GetBlk1                          A:F8A8
+GetBlk2                          A:F8AD
+GetByte                          A:F93D
+GetByte1                         A:F94F
+GoodBlk1                         A:F8C5
+GoodBlk2                         A:F8D4
+GoodCrc                          A:F8FB
+GoodMsg                          A:F9A7
+GotByte                          A:F892
+GotByte1                         A:F897
 Hexdigcnt                        E:0035
-Hexdigdata                       A:FD04
+Hexdigdata                       A:FCED
 Hexdigits                        E:003C
-Inc_addr1                        A:FC8B
-Inc_addrptr                      A:FC85
-IncBlk                           A:F90F
-Input                            A:FAAE
-Input1                           A:FAB2
-Input_chr                        A:FA11
-InputDone                        A:FB13
-InputSave                        A:FB01
-InputSave1                       A:FB07
-InputTooLong                     A:FB14
-InputWait                        A:FABC
-Insert_0                         A:FCA8
-Insert_1                         A:FCB8
-Insert_2                         A:FCC0
-Insert_3                         A:FCD0
-Insert_Cmd                       A:FC8C
-Interrupt                        A:FD76
+Inc_addr1                        A:FC74
+Inc_addrptr                      A:FC6E
+IncBlk                           A:F927
+Input                            A:FA97
+Input1                           A:FA9B
+Input_chr                        A:F9FA
+InputDone                        A:FAFC
+InputSave                        A:FAEA
+InputSave1                       A:FAF0
+InputTooLong                     A:FAFD
+InputWait                        A:FAA5
+Insert_0                         A:FC91
+Insert_1                         A:FCA1
+Insert_2                         A:FCA9
+Insert_3                         A:FCB9
+Insert_Cmd                       A:FC75
+Interrupt                        A:FD5F
+IRQ_cleanup                      A:FD8D
 LF                               E:000A
 linecnt                          E:0033
-MAKECRCTABLE                     A:F9D7
+MAKECRCTABLE                     A:F9C1
 Memchr                           E:0037
 Memptr                           E:003E
 Modejmp                          E:0034
-Mon01                            A:FB62
-Mon02                            A:FB64
-Mon08                            A:FB6F
-Mon09                            A:FB79
-Mon10                            A:FB90
-Monitor                          A:FB57
-MonitorBoot                      A:FB51
-Move_brk                         A:FCD5
-Move_cmd                         A:FCD1
-Move_cmd1                        A:FCD6
-Move_cmd2                        A:FCDC
-Move_cmd3                        A:FCE2
-Msg                              A:F950
+Mon01                            A:FB4B
+Mon02                            A:FB4D
+Mon08                            A:FB58
+Mon09                            A:FB62
+Mon10                            A:FB79
+Monitor                          A:FB40
+MonitorBoot                      A:FB3A
+Move_brk                         A:FCBE
+Move_cmd                         A:FCBA
+Move_cmd1                        A:FCBF
+Move_cmd2                        A:FCC5
+Move_cmd3                        A:FCCB
+Msg                              A:F968
 NAK                              E:0015
-NMIjump                          A:FD84
-Output                           A:FA17
-ParseHex03                       A:FBA5
-ParseHex04                       A:FBA8
-ParseHex05                       A:FBB5
-ParseHex07                       A:FBBB
-ParseHexDig                      A:FB9E
+NMIjump                          A:FD90
+Output                           A:FA00
+ParseHex03                       A:FB8E
+ParseHex04                       A:FB91
+ParseHex05                       A:FB9E
+ParseHex07                       A:FBA4
+ParseHexDig                      A:FB87
 PCH                              E:03E0
 PCL                              E:03E1
-PortReadyMsg                     A:FBCB
-porttxt                          A:FD44
+PortReadyMsg                     A:FBB4
+porttxt                          A:FD2D
 PREG                             E:03E6
-Print1Byte                       A:FA87
-Print1SP                         A:FAA9
-Print2Byte                       A:FA83
-Print2SP                         A:FAA6
-Print_CR                         A:FA76
-Print_Err                        A:F986
-Print_Good                       A:F9A4
-PrintDig                         A:FA90
-PrintMsg                         A:F942
-PrintReg                         A:FA3E
-Printreg1                        A:FA45
-Printreg2                        A:FA50
-Printreg3                        A:FA61
-Printreg4                        A:FA67
-Printreg5                        A:FA6F
-PrintXSP                         A:FAA1
-PrintXSP1                        A:FA9D
+Print1Byte                       A:FA70
+Print1SP                         A:FA92
+Print2Byte                       A:FA6C
+Print2SP                         A:FA8F
+Print_CR                         A:FA5F
+Print_Err                        A:F980
+Print_Good                       A:F999
+PrintDig                         A:FA79
+PrintMsg                         A:F95A
+PrintReg                         A:FA27
+Printreg1                        A:FA2E
+Printreg2                        A:FA39
+Printreg3                        A:FA4A
+Printreg4                        A:FA50
+Printreg5                        A:FA58
+PrintXSP                         A:FA8A
+PrintXSP1                        A:FA86
 Prompt                           E:0032
-PrtErr1                          A:F988
-PrtErr2                          A:F993
-Prtgood1                         A:F9A6
-Prtgood2                         A:F9B1
-PrtMsg1                          A:F944
-PrtMsg2                          A:F94F
+PrtErr1                          A:F982
+PrtErr2                          A:F98D
+Prtgood1                         A:F99B
+Prtgood2                         A:F9A6
+PrtMsg1                          A:F95C
+PrtMsg2                          A:F967
 ptr                              E:003A
-Put_Chr                          A:F83C
+Put_Chr                          A:F854
 Rbuff                            E:0300
-RegData                          A:FA1A
-Reset                            A:FD6A
+RD_BUF                           A:F800
+RD_BUF1                          A:F80D
+RD_ptr                           E:00FE
+RegData                          A:FA03
+Reset                            A:FD53
 retry                            E:003D
 retry2                           E:003E
-Scan_input                       A:FA14
+Scan_input                       A:F9FD
+SER_buf                          E:0200
 SOH                              E:0001
-SP_brk                           A:FC60
-SP_cmd                           A:FBFD
-SP_cmd1                          A:FC11
-SP_cmd2                          A:FC17
-SP_cmd3                          A:FC29
-SP_cmd33                         A:FC38
-SP_cmd4                          A:FC42
-SP_cmd44                         A:FC52
-SP_cmd5                          A:FC64
+SP_brk                           A:FC49
+SP_cmd                           A:FBE6
+SP_cmd1                          A:FBFA
+SP_cmd2                          A:FC00
+SP_cmd3                          A:FC12
+SP_cmd33                         A:FC21
+SP_cmd4                          A:FC2B
+SP_cmd44                         A:FC3B
+SP_cmd5                          A:FC4D
 SPTR                             E:03E5
-Start_OS                         A:FA0E
-StartBlk                         A:F86B
-StartCrc                         A:F855
-StartCrcLp                       A:F929
-SYSjmp                           A:FB57
-tabkey                           A:FAEF
-TXT_cmd                          A:FC65
-TXT_cmd1                         A:FC6F
-TXT_Cmd2                         A:FC7D
-TXT_Cmd3                         A:FC7F
-UpdCrc                           A:F9C7
-Version                          A:FBC4
+Start_OS                         A:F9F7
+StartBlk                         A:F883
+StartCrc                         A:F86D
+StartCrcLp                       A:F941
+SYSjmp                           A:FB40
+tabkey                           A:FAD8
+TXT_cmd                          A:FC4E
+TXT_cmd1                         A:FC58
+TXT_Cmd2                         A:FC66
+TXT_Cmd3                         A:FC68
+UpdCrc                           A:F9B1
+Version                          A:FBAD
 VIA_acr                          E:C00B
 VIA_ddrb                         E:C002
 VIA_hoc                          E:C005
 VIA_ier                          E:C00E
 VIA_loc                          E:C004
-XModem                           A:F849
+WR_ptr                           E:00FF
+XModem                           A:F861
 XREG                             E:03E3
 YREG                             E:03E4
 ysav                             E:0031
-zeroloop                         A:F9DB
+zeroloop                         A:F9C4
 
 Symbols by value:
 0001 SOH
@@ -1273,6 +1312,9 @@ Symbols by value:
 003E Memptr
 003E retry2
 003F bflag
+00FE RD_ptr
+00FF WR_ptr
+0200 SER_buf
 0300 buffer
 0300 Rbuff
 03E0 PCH
@@ -1291,138 +1333,144 @@ C00B VIA_acr
 C00E VIA_ier
 E000 ACIActl
 E001 ACIAdat
-F800 ACIA1_init
-F824 ACIA1_Input
-F82F ACIA1_Scan
-F82F Get_Chr
-F83B ACIA_noscan
-F83C ACIA1_Output
-F83C Put_Chr
-F83D ACIA_Out1
-F849 XModem
-F855 StartCrc
-F86B StartBlk
-F87A GotByte
-F87F GotByte1
-F88A BegBlk
-F88C GetBlk
-F890 GetBlk1
-F895 GetBlk2
-F8AD GoodBlk1
-F8BC GoodBlk2
-F8BE CalcCrc
-F8D8 BadCrc
-F8E3 GoodCrc
-F8FD CopyBlk
-F8FF CopyBlk3
-F90A CopyBlk4
-F90F IncBlk
-F919 Done
-F925 GetByte
-F929 StartCrcLp
-F937 GetByte1
-F938 Flush
-F93C Flush1
-F942 PrintMsg
-F944 PrtMsg1
-F94F PrtMsg2
-F950 Msg
-F986 Print_Err
-F988 PrtErr1
-F993 PrtErr2
-F994 ErrMsg
-F9A4 Print_Good
-F9A6 Prtgood1
-F9B1 Prtgood2
-F9B2 GoodMsg
-F9C7 UpdCrc
-F9D7 MAKECRCTABLE
-F9DB zeroloop
-F9E6 fetch
-F9EF fetch1
-FA07 fetch2
-FA0E Start_OS
-FA11 Input_chr
-FA14 Scan_input
-FA17 Output
-FA1A RegData
-FA3E PrintReg
-FA45 Printreg1
-FA50 Printreg2
-FA61 Printreg3
-FA67 Printreg4
-FA6F Printreg5
-FA76 Print_CR
-FA83 Print2Byte
-FA87 Print1Byte
-FA90 PrintDig
-FA9D PrintXSP1
-FAA1 PrintXSP
-FAA6 Print2SP
-FAA9 Print1SP
-FAAE Input
-FAB2 Input1
-FABC InputWait
-FAD8 backspace
-FAEF tabkey
-FB01 InputSave
-FB07 InputSave1
-FB13 InputDone
-FB14 InputTooLong
-FB1D bell
-FB22 BRKroutine
-FB3D Brk2
-FB51 MonitorBoot
-FB57 Monitor
-FB57 SYSjmp
-FB62 Mon01
-FB64 Mon02
-FB6F Mon08
-FB79 Mon09
-FB90 Mon10
-FB9E ParseHexDig
-FBA5 ParseHex03
-FBA8 ParseHex04
-FBB5 ParseHex05
-FBBB ParseHex07
-FBC4 Version
-FBCB PortReadyMsg
-FBD5 Excute_cmd
-FBDE exe1
-FBE1 DOT_cmd
-FBEC CR_cmd
-FBFD SP_cmd
-FC11 SP_cmd1
-FC17 SP_cmd2
-FC29 SP_cmd3
-FC38 SP_cmd33
-FC42 SP_cmd4
-FC52 SP_cmd44
-FC60 SP_brk
-FC64 SP_cmd5
-FC65 TXT_cmd
-FC6F TXT_cmd1
-FC7D TXT_Cmd2
-FC7F TXT_Cmd3
-FC85 Inc_addrptr
-FC8B Inc_addr1
-FC8C Insert_Cmd
-FCA8 Insert_0
-FCB8 Insert_1
-FCC0 Insert_2
-FCD0 Insert_3
-FCD1 Move_cmd
-FCD5 Move_brk
-FCD6 Move_cmd1
-FCDC Move_cmd2
-FCE2 Move_cmd3
-FCFB Dest_cmd
-FD04 Hexdigdata
-FD14 CmdAscii
-FD20 Cmdjmptbl
-FD38 Cmdseccode
-FD44 porttxt
-FD6A Reset
-FD76 Interrupt
-FD84 NMIjump
-FD85 BrkCmd
+F800 RD_BUF
+F80D RD_BUF1
+F815 ACIA1_init
+F83D ACIA1_Input
+F840 ACIA1_cmp
+F848 ACIA1_Scan
+F848 Get_Chr
+F853 ACIA_noscan
+F854 ACIA1_Output
+F854 Put_Chr
+F855 ACIA_Out1
+F861 XModem
+F86D StartCrc
+F883 StartBlk
+F892 GotByte
+F897 GotByte1
+F8A2 BegBlk
+F8A4 GetBlk
+F8A8 GetBlk1
+F8AD GetBlk2
+F8C5 GoodBlk1
+F8D4 GoodBlk2
+F8D6 CalcCrc
+F8F0 BadCrc
+F8FB GoodCrc
+F915 CopyBlk
+F917 CopyBlk3
+F922 CopyBlk4
+F927 IncBlk
+F931 Done
+F93D GetByte
+F941 StartCrcLp
+F94F GetByte1
+F950 Flush
+F954 Flush1
+F95A PrintMsg
+F95C PrtMsg1
+F967 PrtMsg2
+F968 Msg
+F980 Print_Err
+F982 PrtErr1
+F98D PrtErr2
+F98E ErrMsg
+F999 Print_Good
+F99B Prtgood1
+F9A6 Prtgood2
+F9A7 GoodMsg
+F9B1 UpdCrc
+F9C1 MAKECRCTABLE
+F9C4 zeroloop
+F9CF fetch
+F9D8 fetch1
+F9F0 fetch2
+F9F7 Start_OS
+F9FA Input_chr
+F9FD Scan_input
+FA00 Output
+FA03 RegData
+FA27 PrintReg
+FA2E Printreg1
+FA39 Printreg2
+FA4A Printreg3
+FA50 Printreg4
+FA58 Printreg5
+FA5F Print_CR
+FA6C Print2Byte
+FA70 Print1Byte
+FA79 PrintDig
+FA86 PrintXSP1
+FA8A PrintXSP
+FA8F Print2SP
+FA92 Print1SP
+FA97 Input
+FA9B Input1
+FAA5 InputWait
+FAC1 backspace
+FAD8 tabkey
+FAEA InputSave
+FAF0 InputSave1
+FAFC InputDone
+FAFD InputTooLong
+FB06 bell
+FB0B BRKroutine
+FB26 Brk2
+FB3A MonitorBoot
+FB40 Monitor
+FB40 SYSjmp
+FB4B Mon01
+FB4D Mon02
+FB58 Mon08
+FB62 Mon09
+FB79 Mon10
+FB87 ParseHexDig
+FB8E ParseHex03
+FB91 ParseHex04
+FB9E ParseHex05
+FBA4 ParseHex07
+FBAD Version
+FBB4 PortReadyMsg
+FBBE Excute_cmd
+FBC7 exe1
+FBCA DOT_cmd
+FBD5 CR_cmd
+FBE6 SP_cmd
+FBFA SP_cmd1
+FC00 SP_cmd2
+FC12 SP_cmd3
+FC21 SP_cmd33
+FC2B SP_cmd4
+FC3B SP_cmd44
+FC49 SP_brk
+FC4D SP_cmd5
+FC4E TXT_cmd
+FC58 TXT_cmd1
+FC66 TXT_Cmd2
+FC68 TXT_Cmd3
+FC6E Inc_addrptr
+FC74 Inc_addr1
+FC75 Insert_Cmd
+FC91 Insert_0
+FCA1 Insert_1
+FCA9 Insert_2
+FCB9 Insert_3
+FCBA Move_cmd
+FCBE Move_brk
+FCBF Move_cmd1
+FCC5 Move_cmd2
+FCCB Move_cmd3
+FCE4 Dest_cmd
+FCED Hexdigdata
+FCFD CmdAscii
+FD09 Cmdjmptbl
+FD21 Cmdseccode
+FD2D porttxt
+FD53 Reset
+FD5F Interrupt
+FD82 ACIA_end
+FD8A ACIA_error
+FD8D IRQ_cleanup
+FD90 NMIjump
+FD91 BrkCmd

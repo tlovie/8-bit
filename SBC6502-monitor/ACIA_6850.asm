@@ -14,10 +14,32 @@ ACIAdat = $e001
 VIA_ier = $c00e		; 0b01111111
 VIA_acr = $c00b		; 0b11000000
 VIA_ddrb = $c002	; 0b11111111
-VIA_loc = $c004		; 0x06  cycle is 2 clocks longer than counter
+VIA_loc = $c004		; 0x01  cycle is 2 clocks longer than counter
 VIA_hoc = $c005		; 0x00	
+WR_ptr = $ff		; read and write buffer positons
+RD_ptr = $fe		; zero page
+SER_buf = $0200		; ring buffer for serial 
+
+;WR_BUF:  LDX  WR_ptr     ; Start with A containing the byte to put in the buffer.
+;         STA  SER_buf,X   ; Get the pointer value and store the data where it says,
+;         INC  WR_ptr     ; then increment the pointer for the next write.
+;         RTS
+;-------------
+RD_BUF:  lda WR_ptr
+	 sbc RD_ptr	; count of buffer in a
+	 cmp #$a0	; compare with #a0
+	 bcs RD_BUF1	; if its positive then leave the flow off
+         lda #%10010101  ; Rx int, no Tx int + RTS low, 8n1, /16
+         sta ACIActl     ; will result in 19200 bps
+RD_BUF1: LDX  RD_ptr     ; Ends with A containing the byte just read from buffer.
+         LDA  SER_buf,X   ; Get the pointer value and read the data it points to.
+         INC  RD_ptr     ; Then increment the pointer for the next read.
+         RTS
+;-------------
 
 ACIA1_init:
+		lda RD_ptr	; initialize write pointer
+		sta WR_ptr	; equal to read pointer
 		lda #%01111111
 		sta VIA_ier	; disable interrupts on VIA
 		lda #%11000000  
@@ -30,24 +52,24 @@ ACIA1_init:
 		sta VIA_hoc	; and start the counter by loading hoc
 		lda #%00000011 	; CR1 and CR0 bits master reset
 		sta ACIActl
-		lda #%00010101	; no Rx int, no Tx int, 8n1, /16
+		lda #%10010101	; Rx int, no Tx int, 8n1, /16
 		sta ACIActl	; will result in 19200 bps
 		rts
 
-ACIA1_Input:	; wait for a character on rx
-		lda ACIActl
-		and #$01	; check if Receive register is full
-		beq ACIA1_Input	; wait for a character to be ready
-		lda ACIAdat	; read the character
+ACIA1_Input:	clc	; wait for a character on rx
+		lda RD_ptr
+ACIA1_cmp:	cmp WR_ptr
+		beq ACIA1_cmp	; wait for a character to be ready
+		jsr RD_BUF	; read the character
 		rts
 
 Get_Chr:
 ACIA1_Scan:	; check if a character is waiting and get it
 		clc		; clear carry flag
-		lda ACIActl
-		and #$01	; check if Receive register is full
+		lda WR_ptr	; load the WR position
+		cmp RD_ptr	; compare the RD position
 		beq ACIA_noscan ; no character is waiting so return
-		lda ACIAdat	; read the character
+		jsr RD_BUF	; read the character
 		sec		; set carry flag if we read a character
 ACIA_noscan:	rts
 
